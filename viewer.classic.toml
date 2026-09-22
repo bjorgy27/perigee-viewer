@@ -1,0 +1,92 @@
+# Perigee Viewer settings.  Every key is optional; anything missing falls back to the value shown here.
+# Edit and relaunch.  Colors are "#RRGGBB" or "#RRGGBBAA".
+
+[data]
+orbit_file   = "../Perigee/src/ORBIT_DATA.json"   # written by the engine; SORTED_SATS.json + ELSET.json are read from the same folder
+step_seconds = 60.0                                # seconds between trajectory columns: MUST match the engine's propagate step h
+ranks_poll_seconds = 60.0                          # how often to check SATELLITE_RANKS.json for a new ranking (F5 forces it)
+rerank_command = "../Perigee/target/release/perigee"   # run "<this> rank" in the orbit file's folder to refresh the ranking; "" disables
+rerank_seconds = 120.0                             # how often; between runs the list is re-timed and expired passes drop off live
+
+[station]
+auto_locate = true          # look up lat/lon by IP at launch (ipinfo.io, same as the radar widget); city-level accuracy
+name    = "STATION"         # used when auto_locate is off or the lookup fails
+lat_deg = 40.7128           # north positive
+lon_deg = -74.0060          # east positive, so 74 W is -74.0.  Set auto_locate = false and put the dish's real
+alt_m   = 10.0              # surveyed coordinates here once you have them; IP lookup can be several km off.
+elevation_mask_deg = 10.0   # sky below this elevation is treated as blocked (trees, buildings, haze)
+view_range_km      = 3000.0 # how far out the view cone is drawn (slant range from the station)
+
+[sim]
+start_mode   = "live"     # "live" (system clock) or "history" (replay from earliest epoch)
+start_speed  = 60.0       # history mode: sim seconds per real second at launch
+max_speed    = 86400.0    # history mode: cap for the speed-up button
+min_speed    = 1.0
+
+[tracks]
+ahead_minutes = 15        # orbit line drawn this far ahead of every satellite
+trail_minutes = 45        # bright trail drawn behind the selected satellite
+pick_radius_px = 18.0     # how close (pixels) a click must be to a marker to select it
+
+[scene]
+km_per_unit      = 1000.0   # scene scale; 1000 => 1 unit = 1000 km
+earth_radius_km  = 6378.0
+atmosphere_scale = 1.035    # atmosphere shell radius as a multiple of Earth's
+marker_size      = 0.07     # satellite diamond edge length, scene units
+selected_scale   = 1.8      # marker size multiplier when selected
+marker_spin      = 1.2      # rad/s
+reticle_radius   = 0.34     # ring around the selected satellite
+star_count       = 500
+star_distance    = 180.0
+star_size        = 0.12
+station_size     = 0.05     # ground station dot radius, scene units
+
+[earth_grid]
+major_deg    = 90.0     # brighter lines (equator, prime meridian, ...)
+minor_deg    = 15.0
+major_width  = 0.18     # degrees
+minor_width  = 0.07
+texture_width = 2048    # texture height is half of this
+outline_file  = "assets/countries.geojson"   # Natural Earth 110m borders (public domain); "" disables
+outline_width_px = 1
+
+[camera]
+start_distance = 28.0
+start_pitch    = 0.3     # radians above the equatorial plane
+min_distance   = 8.0
+max_distance   = 120.0
+drag_sensitivity = 0.005
+zoom_step      = 0.1
+
+[lighting]
+sun_illuminance   = 12000.0
+sun_direction     = [80.0, 25.0, 40.0]   # where the light sits, scene units (points at Earth)
+ambient_brightness = 60.0
+bloom_intensity   = 0.25
+
+[colors]
+space        = "#03030A"
+earth        = "#080E18"
+grid_major   = "#288CB4"
+grid_minor   = "#1A4E68"
+atmosphere   = "#40B3FF1A"
+orbit        = "#59D9FF29"    # every track, nothing selected
+orbit_dim    = "#59D9FF09"    # other tracks while something is selected
+orbit_sel    = "#FF3B3BCC"    # the selected track's look-ahead line
+trail_sel    = "#FF6060"          # trail behind the selected satellite
+reticle_sel  = "#FF4040"          # reticle + name tag of the selected satellite
+marker       = "#99F2FF"
+marker_glow  = [0.6, 2.4, 3.0]   # emissive, linear RGB, >1 makes bloom kick in
+outline      = "#4FB8D9"          # country borders on the globe
+station      = "#FF8C3A"          # ground station dot + readout
+view_cone    = "#FF8C3A1F"        # translucent cone of visible sky above the station
+marker_in_view = "#7CFF9E"        # satellites currently above the elevation mask
+marker_in_view_glow = [0.8, 3.0, 1.2]
+selected     = "#FF2A2A"          # the selected satellite's marker
+selected_glow = [6.0, 0.4, 0.4]   # strong red emissive so it blooms
+rank         = "#FFD24D"          # ring around satellites on the SATELLITE_RANKS.json list
+text         = "#8CD9FF"
+text_dim     = "#4D7399"
+button       = "#1A40668C"
+button_hover = "#2666994D"
+button_border = "#59D9FF99"

@@ -1,0 +1,157 @@
+# Settings for the Fire TV app. Served by tv/server.py as data/viewer.toml and fetched at every launch,
+# so edits here take effect on the next launch of the app with no rebuild.
+# Perigee Viewer settings.  Every key is optional; anything missing falls back to a built-in default.
+# Edit and relaunch.  Colors are "#RRGGBB" or "#RRGGBBAA".
+# This is the WARGAMES / green-phosphor look: one colour, everything drawn as glowing lines, CRT scanlines.
+# The earlier blue look is saved in viewer.classic.toml; copy it over this file to go back.
+
+[data]
+source       = "remote"        # "files": read Perigee's folder on this machine. "remote": fetch from tv/server.py (the TV app always does)
+remote_url   = "https://192.168.1.75:8443"
+orbit_file   = "../Perigee/src/ORBIT_DATA.json"   # written by the engine; SORTED_SATS.json, ELSET.json, NORADs.json, SATELLITE_RANKS.json are read from the same folder
+step_seconds = 60.0                                # seconds between trajectory columns: MUST match the engine's propagate step h
+ranks_poll_seconds = 60.0                          # how often to check SATELLITE_RANKS.json for a new ranking (F5 forces it)
+top_ranked = 7                                     # keep only the best N ranked passes (panel rows, rank rings, RANKED ONLY filter)
+rerank_command = "../Perigee/target/release/perigee"   # run "<this> rank" in the orbit file's folder to refresh the ranking; "" disables
+rerank_seconds = 120.0                             # how often; between runs the list is re-timed every 2 s and expired passes drop off
+# Local propagation: integrate the element sets (SORTED_SATS.json, 88 KB) here with the engine's own RK4 + J2 + drag,
+# a time slice per frame, instead of loading the 200 MB of vectors the engine wrote. Tracks are extended as time
+# passes, so Live never runs out of data. false = the old behaviour (orbit_file / the server's orbits.bin).
+local_propagation      = true
+propagation_budget_ms  = 50.0    # milliseconds per frame spent integrating while tracks are being built or extended
+propagation_threads    = 0       # 0 = one per core
+keep_before_min        = 45.0    # minutes of track kept before launch time (trails, History mode start)
+propagate_ahead_h      = 12.0    # integrate this far past now
+propagate_min_ahead_h  = 6.0     # when the shortest track has less than this left, extend everyone to propagate_ahead_h again
+
+[station]
+auto_locate = false         # exact coordinates below; set true to fall back to an IP lookup
+name    = "THE NAPIER"      # home station
+lat_deg = 29.2452787        # north positive (OpenStreetMap house point for the address)
+lon_deg = -81.1031710       # east positive, so 81 W is -81
+alt_m   = 10.0              # surveyed coordinates here once you have them; IP lookup can be several km off.
+elevation_mask_deg = 10.0   # sky below this elevation is treated as blocked (trees, buildings, haze)
+view_range_km      = 3000.0 # how far out the view cone is drawn (slant range from the station)
+cone_range_km      = 9000.0  # the translucent cone body reaches this far, fading to nothing
+cone_fade_power    = 3.0      # fade curve: alpha = (1 - dist/cone_range)^power (higher = fades sooner)
+region             = ""     # region selected at launch; "" = the first [[regions]] entry below
+
+# Sky windows the dish can use. Pick one with the VIEW drop-down (V on the PC, FAST FORWARD on the TV).
+# Azimuth runs clockwise from az_from to az_to (degrees from north); elevation between el_min and el_max.
+# FULL SKY uses elevation_mask_deg as its floor. The choice is sent to Perigee, which re-ranks for that window.
+[[regions]]
+name    = "FULL SKY"
+az_from = 0.0
+az_to   = 360.0
+el_min  = 10.0
+el_max  = 90.0
+
+[[regions]]
+name    = "DISH SECTOR"
+az_from = 120.0
+az_to   = 315.0
+el_min  = 0.0
+el_max  = 45.0
+
+[sim]
+start_mode   = "live"     # "live" (system clock) or "history" (replay from earliest epoch)
+start_speed  = 60.0       # history mode: sim seconds per real second at launch
+max_speed    = 86400.0    # history mode: cap for the speed-up button
+min_speed    = 1.0
+
+[tracks]
+ahead_minutes = 0         # track length for unranked satellites; 0 = no track, markers only
+trail_minutes = 45        # bright trail drawn behind the selected satellite
+selected_ahead_minutes = 60   # fallback for the pick / ranked if a period cannot be worked out
+ranked_orbits = 1.0           # ranked satellites and the pick draw this many full orbits ahead
+pick_radius_px = 18.0     # how close (pixels) a click must be to a marker to select it
+
+[scene]
+km_per_unit      = 1000.0   # scene scale; 1000 => 1 unit = 1000 km
+earth_radius_km  = 6378.0
+atmosphere_scale = 1.035    # atmosphere shell radius as a multiple of Earth's (alpha 0 in the atmosphere color hides it)
+marker_size      = 0.07     # satellite diamond edge length, scene units
+selected_scale   = 1.8      # marker size multiplier when selected
+marker_spin      = 1.2      # rad/s
+reticle_radius   = 0.34     # ring around the selected satellite
+star_count       = 40
+star_distance    = 180.0
+star_size        = 0.08
+station_size     = 0.09     # ground station dot radius, scene units
+outline_line_width = 2.5  # pixel width of the coastlines and the station marker
+earth_unlit      = true     # no shading: the globe is exactly the texture (vector-display look)
+vector_globe     = true     # graticule + continents as glowing 3D lines (the texture grid/outlines are turned off below)
+marker_style     = "cross"  # "cross" for vector-display crosses, "diamond" for the glowing mesh
+cross_size       = 0.09     # half-length of a cross marker, scene units
+
+[earth_grid]
+major_deg    = 0.0      # texture graticule off: the vector globe draws its own lines
+minor_deg    = 0.0
+major_width  = 0.22     # degrees
+minor_width  = 0.06
+texture_width = 512     # texture height is half of this (plain black when vector_globe is on)
+outline_file  = "assets/countries.geojson"   # Natural Earth 110m borders (public domain); "" disables
+outline_width_px = 0    # 0: not rasterised into the texture; the vector globe draws them as lines instead
+
+[camera]
+start_pitch    = 0.3     # radians above the equatorial plane
+min_distance   = 8.0
+max_distance   = 120.0
+drag_sensitivity = 0.005
+zoom_step      = 0.1
+globe_offset_x = -0.20   # where the globe sits across the window: 0 = centre, -0.5 = left edge, +0.5 = right edge
+follow_station = true    # keep the globe turned so the station faces the camera (dragging overrides until you let go)
+start_distance = 22.0
+select_zoom  = 0.7     # picking a satellite flies the camera in to this fraction of the current distance
+fly_seconds  = 1.6     # how long that glide (and the glide back on clear) takes
+explore_seconds = 15.0  # explore mode (X / REWIND): seconds on each random satellite before gliding to the next
+
+[lighting]
+sun_illuminance   = 0.0        # the big board is not sunlit; raise (e.g. 12000) for a shaded globe
+sun_direction     = [80.0, 25.0, 40.0]
+ambient_brightness = 0.0
+bloom_intensity   = 0.0        # Fire TV: no bloom passes
+
+[perf]
+msaa = false             # Fire TV: off (4x costs ~55 ms a frame there)
+hdr  = true              # must stay on: with it off the Fire TV draws no UI at all
+tonemapping = "tony"     # "tony" (default look), "reinhard", "aces", "none" (cheapest)
+present_mode = "vsync"   # "vsync", "novsync", "mailbox", "fifo"
+pipelined_rendering = true
+
+[fx]
+scanlines = 0.0             # Fire TV: off (a full-screen blended layer costs ~10 ms there)
+scanline_period_px = 3      # one dark line every N pixels (Apple II style line gaps)
+vignette = 0.0              # Fire TV: off (same reason)
+cursor_blink = true         # blinking block cursor at the end of the HUD readout
+
+[colors]
+space        = "#000000"
+earth        = "#000000"          # globe base; with earth_unlit the continents are drawn on this
+grid_major   = "#2FB85A"          # equator / prime meridian
+grid_minor   = "#146B2E"          # 15 degree graticule
+atmosphere   = "#33FF6600"        # alpha 00 = no haze shell
+orbit        = "#33FF6648"        # every track, nothing selected
+orbit_dim    = "#33FF6614"        # other tracks while something is selected
+orbit_sel    = "#D8FFE4F0"        # the selected track's look-ahead line
+trail_sel    = "#EEFFF2"          # trail behind the selected satellite
+reticle_sel  = "#E8FFEE"          # reticle, info box border and title
+marker       = "#8CFFA8"
+marker_glow  = [0.3, 2.2, 0.6]    # emissive, linear RGB, >1 makes bloom kick in (diamond style only)
+marker_in_view = "#F2FFF5"        # satellites currently above the elevation mask
+marker_in_view_glow = [1.6, 2.4, 1.6]
+track_in_cone = "#4FA8FF"         # stretch of a track that runs inside the view (visible from the station)
+aos          = "#7CFFA6"         # AOS mark: where a track comes into view (diamond + tick)
+los          = "#FF6A3A"         # LOS mark: where a track drops out of view (diamond + bar)
+selected     = "#FFFFFF"          # the selected satellite's marker
+selected_glow = [2.5, 6.0, 3.0]
+outline      = "#9CFFBE"          # country borders on the globe
+station      = "#F0FFF4"          # ground station dot + readout (amber)
+view_cone    = "#33FF6630"        # translucent cone of visible sky above the station
+rank         = "#9CFFB8"          # ring around satellites on the SATELLITE_RANKS.json list
+rank_top     = "#F4FFF6"          # ranks 1-3: brightest for #1, stepping down for #2 and #3
+text         = "#5CFF8A"
+text_dim     = "#2E8A4A"
+button       = "#02100699"
+button_hover = "#0B3A18CC"
+button_border = "#3BEB6B99"

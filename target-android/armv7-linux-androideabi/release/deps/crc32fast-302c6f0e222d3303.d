@@ -1,0 +1,11 @@
+/home/bonzi/projects/perigee-viewer/target-android/armv7-linux-androideabi/release/deps/crc32fast-302c6f0e222d3303.d: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/baseline.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/combine.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/specialized/mod.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/table.rs
+
+/home/bonzi/projects/perigee-viewer/target-android/armv7-linux-androideabi/release/deps/libcrc32fast-302c6f0e222d3303.rlib: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/baseline.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/combine.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/specialized/mod.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/table.rs
+
+/home/bonzi/projects/perigee-viewer/target-android/armv7-linux-androideabi/release/deps/libcrc32fast-302c6f0e222d3303.rmeta: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/baseline.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/combine.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/specialized/mod.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/table.rs
+
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/lib.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/baseline.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/combine.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/specialized/mod.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.2/src/table.rs:

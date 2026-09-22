@@ -1,0 +1,11 @@
+/home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/deps/ctrlc-c73126382411f446.d: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/error.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/platform/mod.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/platform/unix/mod.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/signal.rs
+
+/home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/deps/libctrlc-c73126382411f446.rlib: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/error.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/platform/mod.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/platform/unix/mod.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/signal.rs
+
+/home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/deps/libctrlc-c73126382411f446.rmeta: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/error.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/platform/mod.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/platform/unix/mod.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/signal.rs
+
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/lib.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/error.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/platform/mod.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/platform/unix/mod.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctrlc-3.5.2/src/signal.rs:

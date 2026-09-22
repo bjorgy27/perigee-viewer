@@ -1,0 +1,14 @@
+/home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/deps/serde-53d5984b8b426915.d: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/build/serde-92c97e78419521e5/out/private.rs
+
+/home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/deps/libserde-53d5984b8b426915.rlib: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/build/serde-92c97e78419521e5/out/private.rs
+
+/home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/deps/libserde-53d5984b8b426915.rmeta: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/build/serde-92c97e78419521e5/out/private.rs
+
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs:
+/home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/build/serde-92c97e78419521e5/out/private.rs:
+
+# env-dep:OUT_DIR=/home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/build/serde-92c97e78419521e5/out

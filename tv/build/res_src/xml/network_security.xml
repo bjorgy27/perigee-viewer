@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cleartext is off everywhere. TLS to the cast host must match the pinned self-signed certificate;
+     WebView additionally checks the fingerprint in code so a non-matching cert is refused twice. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors><certificates src="system" /></trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">192.168.1.75</domain>
+        <trust-anchors><certificates src="@raw/cast_cert" /></trust-anchors>
+    </domain-config>
+</network-security-config>

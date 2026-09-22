@@ -1,0 +1,11 @@
+/home/bonzi/projects/perigee-viewer/target-android/armv7-linux-androideabi/release/deps/hexasphere-76865b8c48a03c17.d: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/interpolation.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/math.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/shapes.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/slice.rs
+
+/home/bonzi/projects/perigee-viewer/target-android/armv7-linux-androideabi/release/deps/libhexasphere-76865b8c48a03c17.rlib: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/interpolation.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/math.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/shapes.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/slice.rs
+
+/home/bonzi/projects/perigee-viewer/target-android/armv7-linux-androideabi/release/deps/libhexasphere-76865b8c48a03c17.rmeta: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/interpolation.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/math.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/shapes.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/slice.rs
+
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/lib.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/interpolation.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/math.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/shapes.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hexasphere-15.1.0/src/slice.rs:

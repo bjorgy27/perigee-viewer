@@ -1,0 +1,52 @@
+[package]
+name = "perigee-viewer"
+version = "0.1.0"
+edition = "2024"
+
+# The viewer is a library so the same code runs as a desktop binary and as an Android (Fire TV) app.
+[lib]
+name = "perigee_viewer"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "perigee-viewer"
+path = "src/main.rs"
+
+[dependencies]
+perigee-orbit = { path = "../Perigee/orbit" }   # the engine's RK4 + J2 + drag propagator, shared with the PC
+nalgebra = { version = "0.35", features = ["serde-serialize"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+chrono-tz = "0.10"
+toml = "0.8"
+ureq = "2"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+sha2 = "0.10"
+
+# Bevy must appear in plain [dependencies] for its derive macros; the per-target tables below add features.
+# Common: only the plugins the viewer uses, no audio.
+bevy = { version = "0.15", default-features = false, features = [
+    "bevy_asset", "bevy_color", "bevy_core_pipeline", "bevy_gizmos", "bevy_pbr", "bevy_picking",
+    "bevy_render", "bevy_state", "bevy_text", "bevy_ui", "bevy_ui_picking_backend", "bevy_window",
+    "bevy_winit", "multi_threaded", "tonemapping_luts", "hdr", "smaa_luts",
+] }
+
+# Desktop: window backends
+[target.'cfg(not(target_os = "android"))'.dependencies]
+bevy = { version = "0.15", default-features = false, features = ["x11", "wayland"] }
+
+# Android / Fire TV: NativeActivity glue, no Java
+[target.'cfg(target_os = "android")'.dependencies]
+bevy = { version = "0.15", default-features = false, features = ["android-native-activity"] }
+android-activity = { version = "0.6", features = ["native-activity"] }   # same one winit uses; for KEEP_SCREEN_ON
+
+# Faster incremental rebuilds while developing (optional)
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4

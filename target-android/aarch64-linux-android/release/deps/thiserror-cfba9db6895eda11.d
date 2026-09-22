@@ -1,0 +1,14 @@
+/home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/deps/thiserror-cfba9db6895eda11.d: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/aserror.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/display.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/var.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/private.rs /home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/build/thiserror-da6de2dfd811b846/out/private.rs
+
+/home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/deps/libthiserror-cfba9db6895eda11.rlib: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/aserror.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/display.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/var.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/private.rs /home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/build/thiserror-da6de2dfd811b846/out/private.rs
+
+/home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/deps/libthiserror-cfba9db6895eda11.rmeta: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/aserror.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/display.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/var.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/private.rs /home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/build/thiserror-da6de2dfd811b846/out/private.rs
+
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/lib.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/aserror.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/display.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/var.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.20/src/private.rs:
+/home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/build/thiserror-da6de2dfd811b846/out/private.rs:
+
+# env-dep:OUT_DIR=/home/bonzi/projects/perigee-viewer/target-android/aarch64-linux-android/release/build/thiserror-da6de2dfd811b846/out

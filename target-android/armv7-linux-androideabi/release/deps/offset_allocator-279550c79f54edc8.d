@@ -1,0 +1,10 @@
+/home/bonzi/projects/perigee-viewer/target-android/armv7-linux-androideabi/release/deps/offset_allocator-279550c79f54edc8.d: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/ext.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/small_float.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/../README.md
+
+/home/bonzi/projects/perigee-viewer/target-android/armv7-linux-androideabi/release/deps/liboffset_allocator-279550c79f54edc8.rlib: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/ext.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/small_float.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/../README.md
+
+/home/bonzi/projects/perigee-viewer/target-android/armv7-linux-androideabi/release/deps/liboffset_allocator-279550c79f54edc8.rmeta: /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/lib.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/ext.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/small_float.rs /home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/../README.md
+
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/lib.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/ext.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/small_float.rs:
+/home/bonzi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/offset-allocator-0.2.0/src/../README.md:

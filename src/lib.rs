@@ -8,8 +8,13 @@
 ///           cargo run -- path/to/ORBIT_DATA.json   overrides it
 ///           SORTED_SATS.json (NORAD IDs, epochs) and ELSET.json (names) are read from the same folder.
 ///
-/// Mouse:    left-drag orbits the camera, scroll zooms, left-click a satellite isolates it,
-///           click empty space (or Esc) clears the selection.
+/// Picking a satellite also draws its ground track on the globe (colors.ground_track; alpha 00 hides it).
+/// Mouse:    left-drag orbits the camera, scroll zooms (down to camera.min_distance, closer than the
+///           whole globe fits), left-click a satellite isolates it, click empty space (or Esc) clears
+///           the selection. With a satellite selected the camera pivots around that satellite (it moves
+///           with it; scroll comes in to camera.min_sat_distance); cleared, it pivots around the globe.
+///           After a drag the view is yours for camera.manual_hold_seconds, then the calculated view
+///           (selected satellite, or the station-facing home) glides back in.
 /// Keys:     L live/history, Space play/pause, + / - sim speed, R restart, Esc clear selection.
 ///           Live locks the sim clock to the system clock.  History replays from the earliest epoch;
 ///           satellites appear when their own element-set epoch is reached.
@@ -412,8 +417,9 @@ struct StationDot;
 struct BoldLines;
 
 //Camera fly-to state: where the glide started, how far along it is, and the view to return to
+//hold: seconds left on a manual drag before the calculated view takes over again (camera.manual_hold_seconds)
 #[derive(Default)]
-struct CamFly { from: (f32, f32, f32), t: f32, home: Option<(f32, f32, f32)>, selected: bool, user_zoom: bool }
+struct CamFly { from: (f32, f32, f32), from_pivot: Vec3, t: f32, home: Option<(f32, f32, f32)>, selected: bool, user_zoom: bool, hold: f32 }
 
 #[derive(Component)]
 struct RegionOption(usize); // drop-down row
@@ -432,7 +438,8 @@ struct MarkerMats { mesh: Handle<Mesh>, normal: Handle<StandardMaterial>, in_vie
 struct InView { count: usize }
 
 #[derive(Component)]
-struct OrbitCamera { yaw: f32, pitch: f32, distance: f32 }
+//pivot: the point the camera orbits and looks at: the globe's centre, or the selected satellite
+struct OrbitCamera { yaw: f32, pitch: f32, distance: f32, pivot: Vec3 }
 
 #[derive(Component)]
 struct HudText;
@@ -1303,7 +1310,7 @@ fn setup_scene(
         Camera { hdr, ..default() },
         tonemap,
         Transform::from_xyz(0.0, 0.0, c.start_distance).looking_at(Vec3::ZERO, Vec3::Y),
-        OrbitCamera { yaw: 0.0, pitch: c.start_pitch, distance: c.start_distance },
+        OrbitCamera { yaw: 0.0, pitch: c.start_pitch, distance: c.start_distance, pivot: Vec3::ZERO },
     ));
     if bloom { cam.insert(Bloom { intensity: l.bloom_intensity, ..Bloom::NATURAL }); }
     if !cfg.perf.msaa { cam.insert(Msaa::Off); }
@@ -2853,11 +2860,12 @@ fn orbit_camera(
     //Scroll zoom only counts with the cursor over the globe (its tile inside perigee-control)
     let wheel_here = windows.get_single().ok().map_or(true, |w| viewport_cursor(w, camera).is_some());
     let dragging = buttons.pressed(MouseButton::Left) && !drag.dragging;
-    //The camera transform for a given orbit state, exactly as it is applied at the end of this system
-    let place = |yaw: f32, pitch: f32, dist: f32| -> Transform {
+    //The camera transform for a given orbit state (pivot, angles, distance from the pivot), exactly as it is
+    //applied at the end of this system
+    let place = |pivot: Vec3, yaw: f32, pitch: f32, dist: f32| -> Transform {
         let rot = Quat::from_rotation_y(yaw) * Quat::from_rotation_x(-pitch);
-        let mut t = Transform::from_translation(rot * Vec3::new(0.0, 0.0, dist));
-        t.look_at(Vec3::ZERO, Vec3::Y);
+        let mut t = Transform::from_translation(pivot + rot * Vec3::new(0.0, 0.0, dist));
+        t.look_at(pivot, Vec3::Y);
         if offset_x.abs() > 1e-4 {
             let half_w = dist * (22.5f32).to_radians().tan() * aspect;
             let right = t.rotation * Vec3::X;
@@ -2888,28 +2896,36 @@ fn orbit_camera(
         })
     };
 
-    //Where the camera wants to be. Selected: an oblique view over the station towards the satellite, zoomed in,
-    //so the cone and the line of sight read in perspective. Cleared: back home (the station-facing view, or
-    //wherever the camera was before the pick).
+    //Where the camera wants to be. Selected: the camera pivots around the satellite itself, sitting outward of
+    //it on the station's side so the cone and the line of sight read in perspective with the globe behind.
+    //Cleared: back home (pivot on the globe's centre: the station-facing view, or wherever the camera was
+    //before the pick).
     let st_pos = station.get_single().ok().map(|s| s.translation()).filter(|d| *d != Vec3::ZERO);
     let st_dir = st_pos.map(|p| p.normalize());
     let sat_pos = sel.0.and_then(|col| sats.iter().find(|(s, _)| s.0 == col)).map(|(_, t)| t.translation());
     let sat_dir = sat_pos.map(|p| p.normalize_or_zero());
     let selected = sat_dir.is_some();
+    //The pivot: the selected satellite (it moves; the camera moves with it), else the globe's centre
+    let want_pivot = if selected { sat_pos.unwrap_or(Vec3::ZERO) } else { Vec3::ZERO };
+    //Distance is measured from the pivot: around a satellite the floor is far lower than around the globe
+    let min_d = if selected { c.min_sat_distance } else { c.min_distance };
     if sel.is_changed() || selected != fly.selected {
         if selected && fly.home.is_none() { fly.home = Some((cam.yaw, cam.pitch, cam.distance)); }
         fly.from = (cam.yaw, cam.pitch, cam.distance);
+        fly.from_pivot = cam.pivot;
         fly.t = 0.0;
         fly.selected = selected;
         fly.user_zoom = false;
+        fly.hold = 0.0;   // a pick (or a clear) is a request to fly: it cancels the manual hold
     }
     let to_angles = |dir: Vec3| (dir.x.atan2(dir.z), dir.y.clamp(-0.999, 0.999).asin());
     let goal: Option<(f32, f32, f32)> = match (sat_dir, st_dir) {
         (Some(sd), Some(st)) => {
-            //Midpoint of station and satellite, pushed sideways (their common normal) and lifted a little.
-            //Then back off: less side push and more distance until the station and the satellite both fit.
+            //From the satellite, look-from direction = outward over the midpoint of station and satellite,
+            //pushed sideways (their common normal) and lifted a little. Then back off: less side push and
+            //more distance until the station, the satellite and the whole globe fit in the frame.
             let home_d = fly.home.map_or(cam.distance, |h| h.2);
-            let base_d = (home_d * c.select_zoom).clamp(c.min_distance, c.max_distance);
+            let base_d = (home_d * c.select_zoom).clamp(min_d, c.max_distance);
             let side = st.cross(sd).normalize_or_zero();
             let pts = [st_pos.unwrap_or(Vec3::ZERO), sat_pos.unwrap_or(Vec3::ZERO)];
             let mut pick = None;
@@ -2918,7 +2934,7 @@ fn orbit_camera(
                 let (y, p) = to_angles(dir);
                 for k in 0..10 {
                     let d = (base_d * 1.12f32.powi(k)).min(c.max_distance);
-                    let t = place(y, p, d);
+                    let t = place(want_pivot, y, p, d);
                     if fits(&t, &pts) && globe_fits(&t) { pick = Some((y, p, d)); break 'search; }
                     if d >= c.max_distance { break; }
                 }
@@ -2936,19 +2952,30 @@ fn orbit_camera(
             cam.yaw -= ev.delta.x * c.drag_sensitivity;
             cam.pitch = (cam.pitch + ev.delta.y * c.drag_sensitivity).clamp(-1.5, 1.5);
         }
-        fly.from = (cam.yaw, cam.pitch, cam.distance); fly.t = 0.0;   // ease back from wherever the drag ends
+        fly.hold = c.manual_hold_seconds;   // the view is the user's for a while after the drag ends
+        cam.pivot = want_pivot;             // still pivoting on the satellite as it moves
+    } else if fly.hold > 0.0 {
+        //Manual hold: the calculated view waits. When the hold runs out the glide back starts from here.
+        motion.clear();
+        cam.pivot = want_pivot;
+        fly.hold -= time.delta_secs();
+        if fly.hold <= 0.0 { fly.hold = 0.0; fly.from = (cam.yaw, cam.pitch, cam.distance); fly.from_pivot = cam.pivot; fly.t = 0.0; }
     } else {
         motion.clear();
-        if let Some((gy, gp, gd)) = goal {
-            let lerp_angle = |a: f32, b: f32, e: f32| { let d = (b - a + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI; a + d * e };
-            if fly.t < 1.0 {
-                fly.t = (fly.t + time.delta_secs() / fly_seconds.max(0.05)).min(1.0);
-                let e = fly.t * fly.t * (3.0 - 2.0 * fly.t);   // smoothstep: eases out of the old view and into the new
+        let lerp_angle = |a: f32, b: f32, e: f32| { let d = (b - a + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI; a + d * e };
+        if fly.t < 1.0 {
+            fly.t = (fly.t + time.delta_secs() / fly_seconds.max(0.05)).min(1.0);
+            let e = fly.t * fly.t * (3.0 - 2.0 * fly.t);   // smoothstep: eases out of the old view and into the new
+            cam.pivot = fly.from_pivot.lerp(want_pivot, e);   // the pivot glides globe <-> satellite with the view
+            if let Some((gy, gp, gd)) = goal {
                 cam.yaw = lerp_angle(fly.from.0, gy, e);
                 cam.pitch = fly.from.1 + (gp - fly.from.1) * e;
                 cam.distance = fly.from.2 + (gd - fly.from.2) * e;
-            } else {
-                //Arrived: keep tracking the goal as the satellite moves. Distance eases too, unless the user zoomed.
+            }
+        } else {
+            //Arrived: keep tracking the goal as the satellite moves. Distance eases too, unless the user zoomed.
+            cam.pivot = want_pivot;
+            if let Some((gy, gp, gd)) = goal {
                 cam.yaw = gy; cam.pitch = gp;
                 if selected && !fly.user_zoom { cam.distance += (gd - cam.distance) * (1.0 - (-2.5 * time.delta_secs()).exp()); }
                 if !selected { fly.home = None; }
@@ -2957,17 +2984,23 @@ fn orbit_camera(
     }
     for ev in wheel.read() {
         if primary.get(ev.window).is_err() || !wheel_here { continue; }   // scrolled in another window or another tile
-        cam.distance = (cam.distance * (1.0 - ev.y * c.zoom_step)).clamp(c.min_distance, c.max_distance);
+        cam.distance = (cam.distance * (1.0 - ev.y * c.zoom_step)).clamp(min_d, c.max_distance);
         fly.user_zoom = true;
     }
-    //Never let the globe leave the frame: back the camera off until its whole disc is on screen
+    //Never let the globe leave the frame: back the camera off until its whole disc is on screen. Only while
+    //the calculated view is in charge and has arrived: a drag, the hold after it, a glide in progress or a
+    //hand zoom are the user's (around a satellite, turning the view puts the globe off-centre on purpose).
+    let manual = fly.user_zoom || dragging || fly.hold > 0.0 || fly.t < 1.0;
     for _ in 0..60 {
-        if globe_fits(&place(cam.yaw, cam.pitch, cam.distance)) || cam.distance >= c.max_distance { break; }
+        if manual || globe_fits(&place(cam.pivot, cam.yaw, cam.pitch, cam.distance)) || cam.distance >= c.max_distance { break; }
         cam.distance = (cam.distance * 1.03).min(c.max_distance);
     }
     let rot = Quat::from_rotation_y(cam.yaw) * Quat::from_rotation_x(-cam.pitch);
-    tf.translation = rot * Vec3::new(0.0, 0.0, cam.distance);
-    tf.look_at(Vec3::ZERO, Vec3::Y);
+    tf.translation = cam.pivot + rot * Vec3::new(0.0, 0.0, cam.distance);
+    //Orbiting a satellite can swing the camera round to the Earth's side of it: never go under the surface
+    let floor = r_earth * 1.02;
+    if tf.translation.length() < floor { tf.translation = tf.translation.normalize_or_zero() * floor; }
+    tf.look_at(cam.pivot, Vec3::Y);
     //Slide the camera sideways (keeping its aim) so the globe lands at globe_offset_x across the window.
     if offset_x.abs() > 1e-4 {
         let half_w = cam.distance * (22.5f32).to_radians().tan() * aspect;
@@ -2978,13 +3011,19 @@ fn orbit_camera(
 
 //------------------------------------------------------------------------------------------ drawing
 //Each satellite gets a short line from its current position to ahead_minutes ahead.
-//The selected one is brighter and also gets a trail behind it; everything else dims while something is selected.
+//The selected one is brighter and also gets a trail behind it, plus its ground track (the sub-satellite
+//point over the same stretch, drawn on the globe in the Earth's turning frame) and a nadir line down to
+//it; everything else dims while something is selected.
 fn draw_orbits(orbits: Res<Orbits>, sel: Res<Selected>, sim: Res<Sim>, cat: Res<Catalog>, cfg: Res<Config>,
                ranks: Res<Ranks>, ranked_only: Res<RankedOnly>, regions: Res<Regions>, mut crossings: ResMut<Crossings>,
                cats: Res<Categories>, tfilter: Res<TypeFilter>,
-               cam: Query<&GlobalTransform, With<Camera3d>>, mut gizmos: Gizmos, mut bold: Gizmos<BoldLines>) {
+               cam: Query<&GlobalTransform, With<Camera3d>>, earth: Query<&GlobalTransform, With<Earth>>,
+               mut gizmos: Gizmos, mut bold: Gizmos<BoldLines>) {
     crossings.0.clear();
     let facing = cam.get_single().map(|c| c.rotation()).unwrap_or_default();
+    let earth_rot = earth.get_single().map(|e| e.rotation()).unwrap_or_default();
+    let r_ground = (cfg.scene.earth_radius_km / cfg.scene.km_per_unit) as f32 * 1.003;   // just above the surface
+    let c_ground = hex(&cfg.colors.ground_track);
     let step = cfg.data.step_seconds;
     let ahead_cols = ((cfg.tracks.ahead_minutes as f64 * 60.0) / step).round() as usize;
     let sel_ahead_cols = ((cfg.tracks.selected_ahead_minutes.max(cfg.tracks.ahead_minutes) as f64 * 60.0) / step).round() as usize;
@@ -3084,6 +3123,24 @@ fn draw_orbits(orbits: Res<Orbits>, sel: Res<Selected>, sim: Res<Sim>, cat: Res<
             let mut trail: Vec<Vec3> = (start..=cur).map(|c| column(&cfg, m, c)).collect();
             trail.push(sat_position(&cfg, m, t));
             bold.linestrip(trail, c_trail);
+
+            //Ground track: each sample's sub-satellite point at its own time. Inertial -> Earth-fixed by the
+            //sidereal angle of that moment, dropped onto the sphere, then turned with the globe as it spins
+            //(the same frame the station dot and the coastlines live in). Trail and look-ahead in one strip.
+            if c_ground.alpha() > 0.0 {
+                let sub = |eci: [f64; 3], dt: f64| -> Vec3 {
+                    let ecef = eci_to_ecef(eci, gmst_rad(jd_now + dt / 86400.0));
+                    earth_rot * (to_scene(&cfg, ecef[0], ecef[1], ecef[2]).normalize_or_zero() * r_ground)
+                };
+                let at_col = |c: usize| sub([m[(0, c)], m[(1, c)], m[(2, c)]], c as f64 * step - t);
+                let here = sub(sat_eci_km(&cfg, m, t), 0.0);
+                let mut ground: Vec<Vec3> = Vec::with_capacity(end - start + 2);
+                ground.extend((start..=cur).map(at_col));
+                ground.push(here);
+                ground.extend((cur + 1..=end).map(at_col));
+                gizmos.linestrip(ground, c_ground);
+                gizmos.line(sat_position(&cfg, m, t), here, c_ground);   // nadir: satellite straight down to its footprint
+            }
         }
     }
 }

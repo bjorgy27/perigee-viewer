@@ -163,9 +163,11 @@ impl Default for EarthGrid {
 #[serde(default)]
 pub struct CameraCfg { pub start_distance: f32, pub start_pitch: f32, pub min_distance: f32, pub max_distance: f32, pub drag_sensitivity: f32, pub zoom_step: f32, pub globe_offset_x: f32, pub follow_station: bool,
     pub select_zoom: f32, pub fly_seconds: f32,   // on a pick: zoom factor on the current distance, and the glide time
+    pub manual_hold_seconds: f32,                 // after a drag: how long the view stays put before the calculated view glides back
+    pub min_sat_distance: f32,                    // closest the camera comes to a selected satellite (world units; it pivots around it)
     pub explore_seconds: f32 }                    // explore mode: dwell time on each satellite before gliding to the next
 impl Default for CameraCfg {
-    fn default() -> Self { Self { start_distance: 28.0, start_pitch: 0.3, min_distance: 8.0, max_distance: 120.0, drag_sensitivity: 0.005, zoom_step: 0.1, globe_offset_x: 0.0, follow_station: false, select_zoom: 0.7, fly_seconds: 1.6, explore_seconds: 15.0 } }
+    fn default() -> Self { Self { start_distance: 28.0, start_pitch: 0.3, min_distance: 6.7, max_distance: 120.0, drag_sensitivity: 0.005, zoom_step: 0.1, globe_offset_x: 0.0, follow_station: false, select_zoom: 0.7, fly_seconds: 1.6, explore_seconds: 15.0, manual_hold_seconds: 10.0, min_sat_distance: 0.15 } }
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -184,6 +186,7 @@ pub struct Colors {
     pub selected: String, pub selected_glow: [f32; 3],
     pub outline: String, pub station: String, pub view_cone: String, pub marker_in_view: String, pub rank: String, pub rank_top: String,
     pub track_in_cone: String, pub aos: String, pub los: String,   // track stretch inside the view; AOS / LOS marks
+    pub ground_track: String,                                      // the pick's sub-satellite path on the globe + nadir line (alpha 00 hides)
     pub text: String, pub text_dim: String, pub button: String, pub button_hover: String, pub button_border: String,
 }
 impl Default for Colors {
@@ -196,6 +199,7 @@ impl Default for Colors {
         selected: "#FF2A2A".into(), selected_glow: [6.0, 0.4, 0.4],
         outline: "#4FB8D9".into(), station: "#FF8C3A".into(),
         track_in_cone: "#4FA8FF".into(), aos: "#7CFFA6".into(), los: "#FF6A3A".into(),
+        ground_track: "#FF606080".into(),
         view_cone: "#FF8C3A1F".into(), marker_in_view: "#7CFF9E".into(), rank: "#FFD24D".into(), rank_top: "#FFFFFF".into(),
         text: "#8CD9FF".into(), text_dim: "#4D7399".into(),
         button: "#1A40668C".into(), button_hover: "#2666994D".into(), button_border: "#59D9FF99".into(),

@@ -53,7 +53,8 @@ outline_width_px = 1
 [camera]
 start_distance = 28.0
 start_pitch    = 0.3     # radians above the equatorial plane
-min_distance   = 8.0
+min_distance   = 6.7     # world units from the globe's centre (surface is 6.378): scroll may come in this close
+min_sat_distance = 0.15  # with a satellite selected the camera pivots around it: closest approach, world units (1 = 1000 km)
 max_distance   = 120.0
 drag_sensitivity = 0.005
 zoom_step      = 0.1
@@ -74,6 +75,7 @@ orbit        = "#59D9FF29"    # every track, nothing selected
 orbit_dim    = "#59D9FF09"    # other tracks while something is selected
 orbit_sel    = "#FF3B3BCC"    # the selected track's look-ahead line
 trail_sel    = "#FF6060"          # trail behind the selected satellite
+ground_track = "#FF606080"        # the pick's ground track on the globe and its nadir line; alpha 00 hides them
 reticle_sel  = "#FF4040"          # reticle + name tag of the selected satellite
 marker       = "#99F2FF"
 marker_glow  = [0.6, 2.4, 3.0]   # emissive, linear RGB, >1 makes bloom kick in

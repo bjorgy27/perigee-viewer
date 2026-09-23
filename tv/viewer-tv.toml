@@ -95,15 +95,17 @@ outline_width_px = 0    # 0: not rasterised into the texture; the vector globe d
 
 [camera]
 start_pitch    = 0.3     # radians above the equatorial plane
-min_distance   = 8.0
+min_distance   = 6.7     # world units from the globe's centre (surface is 6.378): scroll may come in this close
+min_sat_distance = 0.15  # with a satellite selected the camera pivots around it: closest approach, world units (1 = 1000 km)
 max_distance   = 120.0
 drag_sensitivity = 0.005
 zoom_step      = 0.1
 globe_offset_x = -0.20   # where the globe sits across the window: 0 = centre, -0.5 = left edge, +0.5 = right edge
-follow_station = true    # keep the globe turned so the station faces the camera (dragging overrides until you let go)
+follow_station = true    # keep the globe turned so the station faces the camera (a drag overrides it for manual_hold_seconds)
 start_distance = 22.0
 select_zoom  = 0.7     # picking a satellite flies the camera in to this fraction of the current distance
 fly_seconds  = 1.6     # how long that glide (and the glide back on clear) takes
+manual_hold_seconds = 10.0   # after a drag the view stays where you left it this long, then glides back
 explore_seconds = 15.0  # explore mode (X / REWIND): seconds on each random satellite before gliding to the next
 
 [lighting]
@@ -135,6 +137,7 @@ orbit        = "#33FF6648"        # every track, nothing selected
 orbit_dim    = "#33FF6614"        # other tracks while something is selected
 orbit_sel    = "#D8FFE4F0"        # the selected track's look-ahead line
 trail_sel    = "#EEFFF2"          # trail behind the selected satellite
+ground_track = "#A0FFB880"        # the pick's ground track on the globe and its nadir line; alpha 00 hides them
 reticle_sel  = "#E8FFEE"          # reticle, info box border and title
 marker       = "#8CFFA8"
 marker_glow  = [0.3, 2.2, 0.6]    # emissive, linear RGB, >1 makes bloom kick in (diamond style only)

@@ -14,7 +14,7 @@ PORT = int(os.environ.get("PERIGEE_CAST_PORT", "8443"))
 FPS = float(os.environ.get("PERIGEE_CAST_FPS", "8"))
 QUALITY = os.environ.get("PERIGEE_CAST_JPEG_QUALITY", "72")
 WINDOW_TITLE = os.environ.get("PERIGEE_CAST_TITLE", "PERIGEE")
-DATA_DIR = os.environ.get("PERIGEE_DATA_DIR", os.path.join(HERE, "..", "..", "Perigee", "src"))
+DATA_DIR = os.environ.get("PERIGEE_DATA_DIR", os.path.join(HERE, "..", "..", "Perigee"))
 STEP = 60.0            # engine propagate step, seconds
 KEEP_BEFORE_MIN = 45   # how much history before "now" the TV gets (for trails)
 
@@ -106,7 +106,7 @@ def elset_min():
 
 def rerank_now():
     """Run `perigee rank` in the data folder right away (non-blocking); the app picks the new file up."""
-    exe = os.path.join(DATA_DIR, "..", "target", "release", "perigee")
+    exe = os.path.join(DATA_DIR, "target", "release", "perigee")
     try:
         subprocess.Popen([exe, "rank"], cwd=DATA_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:

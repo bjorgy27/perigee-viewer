@@ -72,15 +72,6 @@ pub struct ReloadData { pub elsets: bool }
 //Catalog epoch of a satellite whose track is not integrated yet: far in the future, so sat_t < 0 hides it
 pub const NOT_YET_JD: f64 = 1.0e12;
 
-//Android reports ~2x density on a 1080p TV; keep the UI in real pixels by scaling it by 1/scale_factor.
-//Screen-space positions (from world_to_viewport, in logical px) must then be divided by the UiScale.
-fn android_ui_scale(windows: Query<&Window, With<PrimaryWindow>>, mut ui_scale: ResMut<UiScale>) {
-    if !cfg!(target_os = "android") { return; }
-    let Ok(w) = windows.get_single() else { return };
-    let want = 1.0 / w.scale_factor().max(0.5);
-    if (ui_scale.0 - want).abs() > 1e-3 { ui_scale.0 = want; println!("ui scale set to {want:.3} (window scale factor {:.3})", w.scale_factor()); }
-}
-
 //The Apple II character set (Print Char 21, Kreative Korp, free-use license), used for every piece of text
 #[derive(Resource)]
 pub struct UiFont(pub Handle<Font>);
@@ -293,7 +284,7 @@ struct ScoreOpen(bool);
 #[derive(Resource, Default)]
 struct Regions { list: Vec<config::Region>, current: usize, sent: Option<usize> }
 
-//The VIEW drop-down: open/closed and the highlighted option (remote / arrow keys)
+//The VIEW drop-down: open/closed and the highlighted option (arrow keys)
 #[derive(Resource, Default)]
 struct RegionMenu { open: bool, highlight: usize }
 
@@ -321,7 +312,7 @@ impl Categories {
 #[derive(Component)] struct TypeList;            // container of the option rows
 
 //Explore mode: every explore_seconds the camera glides to a random satellite (ranked or not) and the
-//rest of the sky dims around it. Toggled with X (PC) or REWIND (remote); off returns to the ranking view.
+//rest of the sky dims around it. Toggled with X; off returns to the ranking view.
 #[derive(Resource, Default)]
 struct Explore { on: bool, next: f64, rng: u64, recent: Vec<usize>, panel_was_hidden: bool }
 impl Explore {
@@ -359,11 +350,6 @@ struct ExhaustedBox;        // the centred UPDATE TLES notice
 #[derive(Component)]
 struct ExhaustedCursor;     // its blinking block cursor
 
-//Shared with the remote poller thread: after a view change, poll quickly until a ranking for that
-//region name arrives (or the deadline passes)
-#[derive(Resource, Clone, Default)]
-struct RegionWanted(std::sync::Arc<std::sync::Mutex<Option<(String, std::time::Instant)>>>);
-
 //Ranking panel hidden with P; kept here so the panel stays hidden through its rebuilds
 #[derive(Resource, Default)]
 struct PanelHidden(bool);
@@ -378,9 +364,6 @@ struct RankedOnly(bool);
 #[derive(Resource)]
 pub struct DataSource(pub std::sync::Arc<Source>);
 
-#[derive(Resource)]
-struct RemoteRanks(std::sync::Mutex<std::sync::mpsc::Receiver<String>>);
-
 //Runs "perigee rank" on a timer so the ranking keeps up with the clock
 #[derive(Resource)]
 struct Rerank { next: f64, child: Option<std::process::Child>, dir: std::path::PathBuf }
@@ -392,7 +375,7 @@ struct RankWatch { path: std::path::PathBuf, last_modified: Option<std::time::Sy
 #[derive(Resource, Default)]
 struct Search { active: bool, query: String, results: Vec<usize>, highlight: usize }
 
-//Row cursor for the ranking panel, driven by the TV remote's D-pad (or arrow keys on the desktop)
+//Row cursor for the ranking panel, driven by the arrow keys
 #[derive(Resource, Default)]
 struct RowCursor(Option<usize>);
 
@@ -522,77 +505,33 @@ fn locate_by_ip() -> Option<(String, f64, f64)> {
     }
 }
 
-//Embedded so the TV build needs no files on disk
+//Embedded so the binary needs no asset files on disk
 const UI_FONT_BYTES: &[u8] = include_bytes!("../assets/fonts/PrintChar21.ttf");
 const COUNTRIES_GEOJSON: &str = include_str!("../assets/countries.geojson");
 
-#[bevy_main]
 pub fn main() {
     build_app("viewer.toml", None).run();
 }
 
 /// Everything main() does except running: load the settings and the data, then build the Bevy App with
 /// the whole viewer in it. perigee-control calls this and adds its own windows and systems before running.
-/// `config_path` is the desktop settings file (the Android build ignores it and uses the embedded one);
+/// `config_path` is the settings file;
 /// `orbit_file` replaces the file's [data] orbit_file (and so the folder Perigee's outputs are read from).
 /// A command-line argument still wins over both, as it always has.
 pub fn build_app(config_path: &str, orbit_file: Option<&str>) -> App {
-    #[cfg(target_os = "android")]
-    let _ = (config_path, orbit_file);
-    //Desktop reads viewer.toml next to the binary; the TV build carries it embedded and overrides what
-    //cannot apply there (no files, no IP lookup, no perigee binary to run)
-    #[cfg(not(target_os = "android"))]
     let mut cfg = Config::load(config_path);
-    #[cfg(target_os = "android")]
-    let mut cfg: Config = toml::from_str(include_str!("../viewer.toml")).unwrap_or_default();
-    #[cfg(target_os = "android")]
-    {
-        cfg.data.source = "remote".into();
-        cfg.data.rerank_command = String::new();
-        cfg.station.auto_locate = false;
-    }
-    #[cfg(target_os = "android")]
-    {
-        //A passive display must not let the Fire TV's idle screensaver take over
-        if let Some(app) = bevy::window::ANDROID_APP.get() {
-            app.set_window_flags(android_activity::WindowManagerFlags::KEEP_SCREEN_ON, android_activity::WindowManagerFlags::empty());
-        }
-        //Live settings from the PC (tv/viewer-tv.toml): no rebuild needed to tune the TV
-        let boot = make_source(&cfg);
-        match boot.fetch_config() {
-            Some(txt) => match toml::from_str::<Config>(&txt) {
-                Ok(c) => { cfg = c; println!("config fetched from the PC"); }
-                Err(e) => eprintln!("PC config rejected: {e}; using the embedded one"),
-            },
-            None => println!("no PC config; using the embedded one"),
-        }
-        cfg.data.source = "remote".into();
-        cfg.data.rerank_command = String::new();
-        cfg.station.auto_locate = false;
-    }
     if let Some(o) = orbit_file { cfg.data.orbit_file = o.to_string(); }
-    if cfg.data.source.eq_ignore_ascii_case("remote") { cfg.data.rerank_command = String::new(); }   // the PC's timers re-rank
 
     let source = make_source(&cfg);
     let mut log: Vec<String> = Vec::new();
     say(&mut log, format!("data source: {}", source.describe()));
-    //The TV keeps retrying until the PC answers; the desktop fails fast so a bad path is obvious.
-    let data = loop {
-        match load_data(&cfg, &source, &mut log) {
-            Ok(d) => break d,
-            Err(e) if cfg!(target_os = "android") => { eprintln!("load failed: {e}; retrying in 5 s"); std::thread::sleep(std::time::Duration::from_secs(5)); }
-            Err(e) => panic!("{e}"),
-        }
-    };
+    //Fail fast so a bad path is obvious
+    let data = load_data(&cfg, &source, &mut log).unwrap_or_else(|e| panic!("{e}"));
     let n_sats = data.orbits.len();
     let DataSet { propagator, orbits, catalog, ranks, categories, jd_hist0, jd_end } = data;
 
-    //Station: IP lookup on the desktop if asked; on the TV (or any remote source) whatever Perigee ranked for
-    if cfg.data.source == "remote" {
-        if let Some((name, lat, lon)) = &ranks.station {
-            cfg.station.name = name.clone(); cfg.station.lat_deg = *lat; cfg.station.lon_deg = *lon;
-        }
-    } else if cfg.station.auto_locate {
+    //Station: IP lookup if asked
+    if cfg.station.auto_locate {
         match locate_by_ip() {
             Some((name, lat, lon)) => {
                 println!("station located by IP: {name}  {}", fmt_latlon(lat, lon));
@@ -614,15 +553,12 @@ pub fn build_app(config_path: &str, orbit_file: Option<&str>) -> App {
     regions.sent = if already { Some(regions.current) } else { None };
 
     let rank_watch = RankWatch {
-        last_modified: match &source { Source::Files { dir, .. } => std::fs::metadata(dir.join("SATELLITE_RANKS.json")).and_then(|m| m.modified()).ok(), _ => None },
-        path: match &source { Source::Files { dir, .. } => dir.join("SATELLITE_RANKS.json"), _ => std::path::PathBuf::new() },
+        last_modified: std::fs::metadata(source.dir.join("SATELLITE_RANKS.json")).and_then(|m| m.modified()).ok(),
+        path: source.dir.join("SATELLITE_RANKS.json"),
         next_check: 0.0, force: false,
     };
-    let rerank_dir = match &source { Source::Files { dir, .. } => dir.clone(), _ => std::path::PathBuf::from(".") };
+    let rerank_dir = source.dir.clone();
     let source = std::sync::Arc::new(source);
-    //Remote rankings arrive from a background thread so a slow network never stalls a frame
-    let region_wanted = RegionWanted::default();
-    let remote_rx = spawn_remote_rank_poller(source.clone(), cfg.data.ranks_poll_seconds, region_wanted.0.clone());
 
     let mode = if cfg.sim.start_mode.eq_ignore_ascii_case("history") { Mode::History } else { Mode::Live };
     let mut sim = Sim { t: 0.0, speed: cfg.sim.start_speed, paused: false, t_max: 0.0, jd0: 0.0, jd_hist0, jd_end, exhausted: false };
@@ -680,8 +616,6 @@ pub fn build_app(config_path: &str, orbit_file: Option<&str>) -> App {
         .insert_resource(ranks)
         .insert_resource(rank_watch)
         .insert_resource(DataSource(source))
-        .insert_resource(RemoteRanks(std::sync::Mutex::new(remote_rx)))
-        .insert_resource(region_wanted)
         .insert_resource(Rerank { next: 5.0, child: None, dir: rerank_dir })
         .init_resource::<Outlines>()
         .insert_resource(BootLog(log))
@@ -692,7 +626,7 @@ pub fn build_app(config_path: &str, orbit_file: Option<&str>) -> App {
         .add_systems(
             Update,
             (
-                android_ui_scale, search_input, keyboard, remote_controls, buttons, rank_rows, region_options, apply_region, watch_ranks, auto_rerank, refresh_ranks_live, explore_tick, update_exhausted,
+                search_input, keyboard, arrow_keys, buttons, rank_rows, region_options, apply_region, watch_ranks, auto_rerank, refresh_ranks_live, explore_tick, update_exhausted,
                 advance_time, move_satellites, spin_earth, spin_markers, orbit_camera, pick_satellite,
             ),
         )
@@ -804,9 +738,7 @@ fn reload_data(
     } else {
         let txt = source.0.fetch_ranks();
         *ranks = parse_ranks(txt.as_deref(), orbits.0.len(), cfg.data.top_ranked);
-        if let Source::Files { dir, .. } = &*source.0 {
-            *cats = load_categories(std::fs::read_to_string(dir.join("CATEGORIES.json")).ok().as_deref(), &cat.ids);
-        }
+        *cats = load_categories(std::fs::read_to_string(source.0.dir.join("CATEGORIES.json")).ok().as_deref(), &cat.ids);
         say(&mut lines, format!("rankings reloaded: {} entries", ranks.entries.len()));
     }
     watch.last_modified = std::fs::metadata(&watch.path).and_then(|m| m.modified()).ok();
@@ -820,52 +752,12 @@ fn load_font(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
     commands.insert_resource(UiFont(fonts.add(font)));
 }
 
-//Files on the desktop; the cast server on the TV (token + certificate fingerprint are baked in at build time)
+//Perigee's output folder: the orbit file named on the command line or in the settings, and its folder
 fn make_source(cfg: &Config) -> Source {
-    if cfg.data.source.eq_ignore_ascii_case("remote") {
-        let token = option_env!("PERIGEE_CAST_TOKEN").unwrap_or("").to_string();
-        let fp = option_env!("PERIGEE_CAST_CERT_SHA256").unwrap_or("");
-        if token.len() < 32 || fp.len() != 64 {
-            panic!("remote source needs PERIGEE_CAST_TOKEN and PERIGEE_CAST_CERT_SHA256 at build time (tv/build-android.sh sets them)");
-        }
-        Source::Remote { base: cfg.data.remote_url.trim_end_matches('/').to_string(), token, cert_sha256: data::hex_to_bytes(fp) }
-    } else {
-        let orbit_file = std::env::args().nth(1).unwrap_or_else(|| cfg.data.orbit_file.clone());
-        let orbit_file = std::path::PathBuf::from(orbit_file);
-        let dir = orbit_file.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."));
-        Source::Files { dir, orbit_file }
-    }
-}
-
-//Remote only: a thread that fetches ranks.json every poll_seconds and hands the text over a channel
-fn spawn_remote_rank_poller(source: std::sync::Arc<Source>, poll_seconds: f64,
-                            wanted: std::sync::Arc<std::sync::Mutex<Option<(String, std::time::Instant)>>>) -> std::sync::mpsc::Receiver<String> {
-    let (tx, rx) = std::sync::mpsc::channel::<String>();
-    if matches!(*source, Source::Remote { .. }) {
-        let interval = std::time::Duration::from_secs_f64(poll_seconds.max(5.0));
-        let fast = std::time::Duration::from_secs(3);
-        std::thread::spawn(move || {
-            let mut last = std::time::Instant::now();
-            loop {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                let want = wanted.lock().ok().and_then(|w| w.clone());
-                let hurry = want.as_ref().map_or(false, |(_, deadline)| std::time::Instant::now() < *deadline);
-                if last.elapsed() < if hurry { fast } else { interval } { continue; }
-                last = std::time::Instant::now();
-                if let Some(txt) = source.fetch_ranks() {
-                    //Got the ranking for the region we asked for: back to the normal cadence
-                    if let Some((name, _)) = &want {
-                        let got = serde_json::from_str::<serde_json::Value>(&txt).ok()
-                            .and_then(|v| v.get("region")?.get("name")?.as_str().map(str::to_string));
-                        if got.map_or(false, |g| g.eq_ignore_ascii_case(name)) { if let Ok(mut w) = wanted.lock() { *w = None; } }
-                    }
-                    if tx.send(txt).is_err() { break; }
-                }
-                if want.is_some() && !hurry { if let Ok(mut w) = wanted.lock() { *w = None; } }
-            }
-        });
-    }
-    rx
+    let orbit_file = std::env::args().nth(1).unwrap_or_else(|| cfg.data.orbit_file.clone());
+    let orbit_file = std::path::PathBuf::from(orbit_file);
+    let dir = orbit_file.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."));
+    Source { dir, orbit_file }
 }
 
 fn load_catalog(sorted_sats_txt: Option<&str>, elset_txt: Option<&str>, transmitters_txt: Option<&str>, n: usize) -> Catalog {
@@ -1349,7 +1241,7 @@ fn setup_hud(mut commands: Commands, cfg: Res<Config>, ranks: Res<Ranks>, region
         let warn = hex(&cfg.colors.los);
         let text_c = hex(&cfg.colors.text);
         let mut bg = hex(&cfg.colors.space).to_srgba(); bg.alpha = 0.92;
-        let advice = if cfg!(target_os = "android") { "PERIGEE MUST RUN ON THE PC, THEN RELAUNCH THIS APP" } else { "RUN PERIGEE, THEN RELAUNCH THE VIEWER" };
+        let advice = "RUN PERIGEE, THEN RELAUNCH THE VIEWER";
         commands
             .spawn((
                 Node {
@@ -1425,9 +1317,9 @@ fn setup_hud(mut commands: Commands, cfg: Res<Config>, ranks: Res<Ranks>, region
 
     spawn_rank_panel(&mut commands, &cfg, &ranks, &regions, &cats, false, false, &font);
 
-    //Bottom-right button bar (mouse only: hidden on the TV)
+    //Bottom-right button bar
     commands
-        .spawn((if cfg!(target_os = "android") { Visibility::Hidden } else { Visibility::Inherited }, Node {
+        .spawn((Visibility::Inherited, Node {
             position_type: PositionType::Absolute,
             right: Val::Px(16.0),
             bottom: Val::Px(12.0),
@@ -1498,11 +1390,10 @@ fn spawn_rank_panel(commands: &mut Commands, cfg: &Config, ranks: &Ranks, region
             RankPanel,
         ))
         .with_children(|col| {
-            //Spawned on the TV as well (hidden): skipping it there coincided with the UI not rendering at all
             col.spawn((
                 Button,
                 ButtonAction::OpenSearch,
-                if cfg!(target_os = "android") { Visibility::Hidden } else { Visibility::Inherited },
+                Visibility::Inherited,
                 Node {
                     padding: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
                     border: UiRect::all(Val::Px(2.0)),
@@ -1589,7 +1480,6 @@ fn spawn_rank_panel(commands: &mut Commands, cfg: &Config, ranks: &Ranks, region
 
             col.spawn((
                 Text::new(if ranks.entries.is_empty() { "RANKING  (no SATELLITE_RANKS.json)".to_string() }
-                          else if cfg!(target_os = "android") { format!("RANKING  {}  ({} PASSES)   PLAY/PAUSE FILTER   MENU HIDE", ranks.region_name.clone().unwrap_or_else(|| "NEXT 15 MIN".into()).to_uppercase(), ranks.entries.len()) }
                           else { format!("RANKING  {}  ({} PASSES)   K FILTER   P HIDE", ranks.region_name.clone().unwrap_or_else(|| "NEXT 15 MIN".into()).to_uppercase(), ranks.entries.len()) }),
                 TextFont { font: font.clone(), font_size: 12.0, ..default() },
                 TextColor(text_c),
@@ -1604,12 +1494,7 @@ fn spawn_rank_panel(commands: &mut Commands, cfg: &Config, ranks: &Ranks, region
                 BorderColor(hex(&cfg.colors.button_border)),
             ))
             .with_children(|b| {
-                b.spawn((Text::new(match (score_open, cfg!(target_os = "android")) {
-                            (true, true) => "SCORE WEIGHTS  [-]  REWIND",
-                            (false, true) => "SCORE WEIGHTS  [+]  REWIND",
-                            (true, false) => "SCORE WEIGHTS  [-]",
-                            (false, false) => "SCORE WEIGHTS  [+]",
-                         }),
+                b.spawn((Text::new(if score_open { "SCORE WEIGHTS  [-]" } else { "SCORE WEIGHTS  [+]" }),
                          TextFont { font: font.clone(), font_size: 12.0, ..default() }, TextColor(text_c)));
             });
             col.spawn((
@@ -1750,7 +1635,7 @@ fn spawn_info_box(commands: &mut Commands, cfg: &Config, font: &Handle<Font>) {
                     BorderColor(accent),
                 ))
                 .with_children(|f| {
-                    f.spawn((Text::new(if cfg!(target_os = "android") { "BACK CLEARS" } else { "DRAG ME" }), TextFont { font: font.clone(), font_size: 9.0, ..default() }, TextColor(dim_c), InfoFollowLabel));
+                    f.spawn((Text::new("DRAG ME"), TextFont { font: font.clone(), font_size: 9.0, ..default() }, TextColor(dim_c), InfoFollowLabel));
                 });
             });
 
@@ -1821,7 +1706,7 @@ fn update_hud(
          {}    view {region_name}    in view {}{}{}{}",
         cfg.station.name, in_view.count, if ranked_only.0 { "    RANKED ONLY" } else { "" },
         if tfilter.0.is_some() { format!("    TYPE {}", cats.label(&tfilter)) } else { String::new() },
-        if explore.on { if cfg!(target_os = "android") { "    EXPLORE  (REWIND ENDS)" } else { "    EXPLORE  (X ENDS)" } } else { "" },
+        if explore.on { "    EXPLORE  (X ENDS)" } else { "" },
     ).to_uppercase();
     if text.0 != new_text { text.0 = new_text; }
 }
@@ -1917,7 +1802,7 @@ fn rank_rows(
     }
 }
 
-//Drop-down option rows: click selects; highlight follows the remote cursor
+//Drop-down option rows: click selects; highlight follows the arrow-key cursor
 fn region_options(
     mut rows: Query<(&Interaction, &RegionOption, &mut BackgroundColor), With<Button>>,
     cfg: Res<Config>,
@@ -1933,7 +1818,7 @@ fn region_options(
     }
 }
 
-//TYPE drop-down rows: click selects; highlight follows the remote cursor (row 0 = ALL)
+//TYPE drop-down rows: click selects; highlight follows the arrow-key cursor (row 0 = ALL)
 fn type_options(
     mut rows: Query<(&Interaction, &TypeOption, &mut BackgroundColor), With<Button>>,
     cfg: Res<Config>,
@@ -1962,7 +1847,7 @@ fn apply_type(
     mut list: Query<&mut Visibility, With<TypeList>>,
 ) {
     let caption = format!("TYPE: {}  [{}]{}", cats.label(&filter), if menu.open { "-" } else { "+" },
-        if cfg!(target_os = "android") { "  FAST FORWARD x2" } else { "  T" });
+        "  T");
     for mut t in &mut header { if t.0 != caption { t.0 = caption.clone(); } }
     for mut v in &mut list { let want = if menu.open { Visibility::Inherited } else { Visibility::Hidden }; if *v != want { *v = want; } }
 }
@@ -1998,30 +1883,26 @@ fn apply_region(
     mut header: Query<&mut Text, With<RegionHeader>>,
     mut list: Query<&mut Visibility, With<RegionList>>,
     mut rr: ResMut<Rerank>,
-    wanted: Res<RegionWanted>,
     mut sent: Local<Option<usize>>,
     mut started: Local<bool>,
 ) {
     if let Some(r) = regions.list.get(regions.current) {
         let caption = format!("VIEW: {}  [{}]{}", r.name, if menu.open { "-" } else { "+" },
-            if cfg!(target_os = "android") { "  FAST FORWARD" } else { "  V" });
+            "  V");
         for mut t in &mut header { if t.0 != caption { t.0 = caption.clone(); } }
     }
     for mut v in &mut list { let want = if menu.open { Visibility::Inherited } else { Visibility::Hidden }; if *v != want { *v = want; } }
 
-    //Selection changed since we last told Perigee: write / post it and ask for a re-rank right away
+    //Selection changed since we last told Perigee: write it and ask for a re-rank right away
     if !*started { *started = true; *sent = regions.sent; }
     if *sent != Some(regions.current) {
         if let Some(r) = regions.list.get(regions.current) {
-            //The send goes on its own thread so a slow network never stalls the frame loop
             match serde_json::to_string(r) {
                 Ok(json) => {
-                    let (src, name) = (source.0.clone(), r.name.clone());
-                    if let Ok(mut w) = wanted.0.lock() { *w = Some((r.name.clone(), std::time::Instant::now() + std::time::Duration::from_secs(90))); }
-                    std::thread::spawn(move || match src.send_region(&json) {
-                        Ok(()) => println!("view region -> Perigee: {name}"),
+                    match source.0.send_region(&json) {
+                        Ok(()) => println!("view region -> Perigee: {}", r.name),
                         Err(e) => eprintln!("could not send the view region: {e}"),
-                    });
+                    }
                     rr.next = 0.0;
                 }
                 Err(e) => eprintln!("region json: {e}"),
@@ -2031,44 +1912,29 @@ fn apply_region(
     }
 }
 
-//TV remote (and desktop arrow keys): Up/Down move the row cursor, Select/Enter picks that satellite,
-//Left/Right step the selection through the ranked list, Play/Pause toggles ranked-only, Back clears
-//the selection (and with nothing selected, Back leaves the app the normal Android way).
-fn remote_controls(
+//Arrow keys: Up/Down move the row cursor (or the open drop-down's highlight), Enter picks that row,
+//Left/Right step the selection through the ranked list.
+fn arrow_keys(
     mut events: EventReader<KeyboardInput>,
     search: Res<Search>,
     ranks: Res<Ranks>,
     mut cursor: ResMut<RowCursor>,
     mut sel: ResMut<Selected>,
-    mut ranked_only: ResMut<RankedOnly>,
-    mut panel_hidden: ResMut<PanelHidden>,
     mut score_open: ResMut<ScoreOpen>,
     mut menu: ResMut<RegionMenu>,
     mut regions: ResMut<Regions>,
-    mut panel: Query<&mut Visibility, With<RankPanel>>,
-    time: Res<Time>,
-    mut explore: ResMut<Explore>,
     (mut tmenu, mut tfilter, cats): (ResMut<TypeMenu>, ResMut<TypeFilter>, Res<Categories>),
 ) {
     if search.active { return; }
     let shown = ranks.entries.len();
-    let now = time.elapsed_secs_f64();
     for ev in events.read() {
         if !ev.state.is_pressed() { continue; }
-        //FAST FORWARD steps the drop-downs: VIEW open -> TYPE open -> both closed; the D-pad works whichever is open
-        if matches!(&ev.logical_key, Key::MediaFastForward | Key::MediaTrackNext) {
-            if menu.open { menu.open = false; tmenu.open = true; tmenu.highlight = tfilter.0.map_or(0, |k| k + 1); }
-            else if tmenu.open { tmenu.open = false; }
-            else { menu.open = true; menu.highlight = regions.current; }
-            continue;
-        }
         if tmenu.open {
             let n = cats.rows().max(1);
             match &ev.logical_key {
                 Key::ArrowDown => tmenu.highlight = (tmenu.highlight + 1) % n,
                 Key::ArrowUp => tmenu.highlight = (tmenu.highlight + n - 1) % n,
                 Key::Enter => { tfilter.0 = cats.filter_for_row(tmenu.highlight); tmenu.open = false; }
-                Key::BrowserBack => tmenu.open = false,
                 _ => {}
             }
             continue;
@@ -2079,21 +1945,11 @@ fn remote_controls(
                 Key::ArrowDown => menu.highlight = (menu.highlight + 1) % n,
                 Key::ArrowUp => menu.highlight = (menu.highlight + n - 1) % n,
                 Key::Enter => { regions.current = menu.highlight.min(n - 1); menu.open = false; }
-                Key::BrowserBack => menu.open = false,
                 _ => {}
             }
             continue;
         }
-        //Fire TV MENU button: winit has no name for it, so match the physical code or the raw Android keycode 82
-        let is_menu = ev.key_code == KeyCode::ContextMenu
-            || matches!(&ev.logical_key, Key::Unidentified(bevy::input::keyboard::NativeKey::Android(82)));
-        if is_menu {
-            panel_hidden.0 = !panel_hidden.0;
-            for mut v in &mut panel { *v = if panel_hidden.0 { Visibility::Hidden } else { Visibility::Inherited }; }
-            continue;
-        }
         match &ev.logical_key {
-            Key::MediaRewind | Key::MediaTrackPrevious => { let on = !explore.on; set_explore(on, now, &mut explore, &mut sel, &mut panel_hidden, &mut panel); }
             Key::ArrowDown => {
                 if shown > 0 { cursor.0 = Some(cursor.0.map_or(0, |c| (c + 1) % shown)); }
             }
@@ -2119,8 +1975,6 @@ fn remote_controls(
                 sel.0 = Some(ranks.entries[next].pass.column);
                 cursor.0 = if next < shown { Some(next) } else { None };
             }
-            Key::MediaPlayPause => { ranked_only.0 = !ranked_only.0; }
-            Key::BrowserBack => { if explore.on { set_explore(false, now, &mut explore, &mut sel, &mut panel_hidden, &mut panel); } else if sel.0.is_some() { sel.0 = None; } }
             _ => {}
         }
     }
@@ -2211,7 +2065,6 @@ fn watch_ranks(
     cfg: Res<Config>,
     orbits: Res<Orbits>,
     mut watch: ResMut<RankWatch>,
-    remote: Res<RemoteRanks>,
     mut ranks: ResMut<Ranks>,
     score_open: Res<ScoreOpen>,
     panel_hidden: Res<PanelHidden>,
@@ -2224,16 +2077,6 @@ fn watch_ranks(
     if keys.just_pressed(KeyCode::F5) { watch.force = true; }
     let now = time.elapsed_secs_f64();
 
-    //Remote source: rankings come in over the channel from the poller thread
-    if let Some(txt) = remote.0.lock().ok().and_then(|rx| rx.try_recv().ok()) {
-        let fresh = parse_ranks(Some(&txt), orbits.0.len(), cfg.data.top_ranked);
-        println!("rankings received: {} entries", fresh.entries.len());
-        *ranks = fresh;
-        for e in &panel { commands.entity(e).despawn_recursive(); }
-        spawn_rank_panel(&mut commands, &cfg, &ranks, &regions, &cats, score_open.0, panel_hidden.0, &ui_font.0);
-        return;
-    }
-    if watch.path.as_os_str().is_empty() { return; }
 
     if now < watch.next_check && !watch.force { return; }
     watch.next_check = now + cfg.data.ranks_poll_seconds.max(1.0);
@@ -2269,8 +2112,7 @@ fn update_score_detail(
         if let ButtonAction::ToggleScore = action {
             for (parent, mut t) in &mut labels {
                 if parent.get() == entity {
-                    let suffix = if cfg!(target_os = "android") { "  REWIND" } else { "" };
-                    t.0 = format!("SCORE WEIGHTS  [{}]{}", if score_open.0 { "-" } else { "+" }, suffix);
+                    t.0 = format!("SCORE WEIGHTS  [{}]", if score_open.0 { "-" } else { "+" });
                 }
             }
         }
@@ -2451,8 +2293,7 @@ fn update_info_box(
     node.top = Val::Px(pos.y);
     *vis = Visibility::Inherited;
     if let Ok((mut t, mut c)) = follow_label.get_single_mut() {
-        let (label, color) = if cfg!(target_os = "android") { ("BACK CLEARS  LEFT/RIGHT NEXT", hex(&cfg.colors.text_dim)) }
-                             else if drag.pinned.is_some() { ("PINNED  CLICK TO FOLLOW", hex(&cfg.colors.reticle_sel)) } else { ("FOLLOWING  DRAG TO PIN", hex(&cfg.colors.text_dim)) };
+        let (label, color) = if drag.pinned.is_some() { ("PINNED  CLICK TO FOLLOW", hex(&cfg.colors.reticle_sel)) } else { ("FOLLOWING  DRAG TO PIN", hex(&cfg.colors.text_dim)) };
         if t.0 != label { t.0 = label.into(); c.0 = color; }
     }
 

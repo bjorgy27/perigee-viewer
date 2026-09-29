@@ -39,7 +39,7 @@ impl Region {
     pub fn full_azimuth(&self) -> bool { (self.az_to - self.az_from).abs() >= 360.0 || (self.az_to - self.az_from).rem_euclid(360.0) == 0.0 }
 }
 
-//Rendering cost knobs (the Fire TV build gets these from tv/viewer-tv.toml at launch)
+//Rendering cost knobs
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Perf { pub msaa: bool, pub hdr: bool, pub tonemapping: String, pub present_mode: String, pub pipelined_rendering: bool }
@@ -58,15 +58,13 @@ impl Default for Fx {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Data {
-    pub source: String,           // "files" (this machine) or "remote" (the Perigee cast server; the TV build forces this)
-    pub remote_url: String,       // https://host:port of tv/server.py
     pub orbit_file: String, pub step_seconds: f64, pub ranks_poll_seconds: f64,
     pub top_ranked: usize,        // how many of Perigee's ranked passes the viewer keeps (panel rows, rings, ranked-only filter)
     pub rerank_command: String,   // Perigee binary to run for a fresh ranking ("" disables)
     pub rerank_seconds: f64,      // how often to run it
     //Local propagation: integrate the element sets (SORTED_SATS.json) here with the engine's own RK4,
     //instead of loading the vectors the engine wrote. No 200 MB file, and the data never runs out.
-    pub local_propagation: bool,      // false: read orbit_file (or the server's orbits.bin) like before
+    pub local_propagation: bool,      // false: read orbit_file like before
     pub propagation_budget_ms: f64,   // time slice per frame spent integrating (the rest of the frame is drawing)
     pub propagation_threads: usize,   // 0 = one per core
     pub keep_before_min: f64,         // minutes of track kept before launch time (trails, History mode)
@@ -75,7 +73,6 @@ pub struct Data {
 }
 impl Default for Data {
     fn default() -> Self { Self {
-        source: "files".into(), remote_url: "https://192.168.1.75:8443".into(),
         orbit_file: "../Perigee/src/ORBIT_DATA.json".into(), step_seconds: 60.0, ranks_poll_seconds: 60.0, top_ranked: 7,
         rerank_command: "../Perigee/target/release/perigee".into(), rerank_seconds: 120.0,
         local_propagation: true, propagation_budget_ms: 50.0, propagation_threads: 0,

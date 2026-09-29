@@ -4,8 +4,6 @@
 # The earlier blue look is saved in viewer.classic.toml; copy it over this file to go back.
 
 [data]
-source       = "files"        # "files": read Perigee's folder on this machine. "remote": fetch from tv/server.py (the TV app always does)
-remote_url   = "https://192.168.1.75:8443"
 orbit_file   = "../Perigee/ORBIT_DATA.json"   # written by the engine; SORTED_SATS.json, ELSET.json, NORADs.json, SATELLITE_RANKS.json are read from the same folder
 step_seconds = 60.0                                # seconds between trajectory columns: MUST match the engine's propagate step h
 ranks_poll_seconds = 60.0                          # how often to check SATELLITE_RANKS.json for a new ranking (F5 forces it)
@@ -14,7 +12,7 @@ rerank_command = "../Perigee/target/release/perigee"   # run "<this> rank" in th
 rerank_seconds = 120.0                             # how often; between runs the list is re-timed every 2 s and expired passes drop off
 # Local propagation: integrate the element sets (SORTED_SATS.json, 88 KB) here with the engine's own RK4 + J2 + drag,
 # a time slice per frame, instead of loading the 200 MB of vectors the engine wrote. Tracks are extended as time
-# passes, so Live never runs out of data. false = the old behaviour (orbit_file / the server's orbits.bin).
+# passes, so Live never runs out of data. false = the old behaviour (orbit_file).
 local_propagation      = true
 propagation_budget_ms  = 50.0    # milliseconds per frame spent integrating while tracks are being built or extended
 propagation_threads    = 0       # 0 = one per core
@@ -34,7 +32,7 @@ cone_range_km      = 9000.0  # the translucent cone body reaches this far, fadin
 cone_fade_power    = 3.0      # fade curve: alpha = (1 - dist/cone_range)^power (higher = fades sooner)
 region             = ""     # region selected at launch; "" = the first [[regions]] entry below
 
-# Sky windows the dish can use. Pick one with the VIEW drop-down (V on the PC, FAST FORWARD on the TV).
+# Sky windows the dish can use. Pick one with the VIEW drop-down (V).
 # Azimuth runs clockwise from az_from to az_to (degrees from north); elevation between el_min and el_max.
 # FULL SKY uses elevation_mask_deg as its floor. The choice is sent to Perigee, which re-ranks for that window.
 [[regions]]

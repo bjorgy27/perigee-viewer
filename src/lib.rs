@@ -96,6 +96,13 @@ pub struct Catalog {
     pub elsets: Option<OMatrix<f64, Const<9>, Dyn>>,        // the 9-row element set matrix (SORTED_SATS.json)
 }
 
+impl Catalog {
+    /// Mean motion (rev/day) of a column, straight out of the element sets: row 2 of SORTED_SATS.json
+    pub fn mean_motion(&self, col: usize) -> Option<f64> {
+        self.elsets.as_ref().filter(|m| col < m.ncols()).map(|m| m[(2, col)])
+    }
+}
+
 #[derive(Resource)]
 #[allow(dead_code)]
 struct RealClock { started: std::time::Instant }
@@ -277,9 +284,6 @@ pub struct Ranks {
     pub region_name: Option<String>,
 }
 
-#[derive(Resource, Default)]
-struct ScoreOpen(bool);
-
 //Sky windows and which one is selected; `sent` tracks what Perigee was last told
 #[derive(Resource, Default)]
 struct Regions { list: Vec<config::Region>, current: usize, sent: Option<usize> }
@@ -366,9 +370,29 @@ pub struct DataSource(pub std::sync::Arc<Source>);
 
 //Runs "perigee rank" on a timer so the ranking keeps up with the clock
 #[derive(Resource)]
-struct Rerank { next: f64, child: Option<std::process::Child>, dir: std::path::PathBuf }
+struct Rerank { next: f64, child: Option<std::process::Child>, dir: std::path::PathBuf, last_jd: f64 }
 
 //Polls SATELLITE_RANKS.json's modified time so a fresh `perigee rank` shows up without a relaunch
+//Which orbit class the view shows, cycled with [O] in the viewer itself (there is no boot page out here).
+//This is a filter over the data already on screen, not a refetch: the propagated set holds whatever the
+//last full engine run pulled, and [O] just decides which part of it is drawn. Mean motion (rev/day) is
+//the whole test: the geostationary belt sits at about one revolution a day, low orbit at eleven or more.
+#[derive(Resource)]
+pub struct OrbitSet { pub mode: String, pub note: String, pub note_until: f64 }
+impl OrbitSet {
+    fn label(&self) -> &'static str {
+        match self.mode.as_str() { "geo" => "GEO", "leo" => "LEO", _ => "ALL" }
+    }
+    /// Does this column belong to the selected class? Anything without element sets is always shown.
+    pub fn allows(&self, cat: &Catalog, col: usize) -> bool {
+        match self.mode.as_str() {
+            "geo" => cat.mean_motion(col).is_some_and(|n| n < 1.1),
+            "leo" => cat.mean_motion(col).is_none_or(|n| n >= 1.1),
+            _ => true,
+        }
+    }
+}
+
 #[derive(Resource)]
 struct RankWatch { path: std::path::PathBuf, last_modified: Option<std::time::SystemTime>, next_check: f64, force: bool }
 
@@ -456,7 +480,7 @@ enum Field {
 struct RankPanel;
 
 #[derive(Component)]
-struct ScoreDetail;
+struct ButtonBar;
 
 #[derive(Component)]
 struct SearchBox;
@@ -471,7 +495,7 @@ struct RankRow(usize);   // column of the satellite this row selects
 struct RankRowIndex(usize);   // position in the panel, for the D-pad cursor
 
 #[derive(Component, Clone, Copy)]
-enum ButtonAction { ToggleMode, TogglePause, Slower, Faster, Restart, Clear, ToggleRanked, OpenSearch, ToggleScore, FollowSat, RegionMenu, TypeMenu }
+enum ButtonAction { ToggleMode, TogglePause, Slower, Faster, Restart, Clear, ToggleRanked, OpenSearch, FollowSat, RegionMenu, TypeMenu }
 
 //------------------------------------------------------------------------------------------ main
 //IP geolocation via ipinfo.io (what the radar widget uses). Result is cached next to viewer.toml so an
@@ -523,6 +547,8 @@ pub fn build_app(config_path: &str, orbit_file: Option<&str>) -> App {
     if let Some(o) = orbit_file { cfg.data.orbit_file = o.to_string(); }
 
     let source = make_source(&cfg);
+    //Kept before cfg is handed to the app: the [O] orbit set is seeded from it
+    let orbit_mode = match cfg.data.orbits.trim().to_lowercase().as_str() { "geo" => "geo", "all" => "all", _ => "leo" }.to_string();
     let mut log: Vec<String> = Vec::new();
     say(&mut log, format!("data source: {}", source.describe()));
     //Fail fast so a bad path is obvious
@@ -600,7 +626,6 @@ pub fn build_app(config_path: &str, orbit_file: Option<&str>) -> App {
         .init_resource::<DragState>()
         .init_resource::<InView>()
         .init_resource::<RankedOnly>()
-        .init_resource::<ScoreOpen>()
         .init_resource::<RegionMenu>()
         .insert_resource(categories)
         .init_resource::<TypeFilter>()
@@ -616,7 +641,8 @@ pub fn build_app(config_path: &str, orbit_file: Option<&str>) -> App {
         .insert_resource(ranks)
         .insert_resource(rank_watch)
         .insert_resource(DataSource(source))
-        .insert_resource(Rerank { next: 5.0, child: None, dir: rerank_dir })
+        .insert_resource(Rerank { next: 5.0, child: None, dir: rerank_dir, last_jd: 0.0 })
+        .insert_resource(OrbitSet { mode: orbit_mode, note: String::new(), note_until: 0.0 })
         .init_resource::<Outlines>()
         .insert_resource(BootLog(log))
         .init_resource::<ViewerFocus>()
@@ -626,7 +652,7 @@ pub fn build_app(config_path: &str, orbit_file: Option<&str>) -> App {
         .add_systems(
             Update,
             (
-                search_input, keyboard, arrow_keys, buttons, rank_rows, region_options, apply_region, watch_ranks, auto_rerank, refresh_ranks_live, explore_tick, update_exhausted,
+                search_input, keyboard, arrow_keys, buttons, rank_rows, region_options, apply_region, watch_ranks, auto_rerank, orbit_filter_panel, refresh_ranks_live, explore_tick, update_exhausted,
                 advance_time, move_satellites, spin_earth, spin_markers, orbit_camera, pick_satellite,
             ),
         )
@@ -636,7 +662,7 @@ pub fn build_app(config_path: &str, orbit_file: Option<&str>) -> App {
             Update,
             (
                 draw_orbits, draw_reticles, draw_rank_rings, draw_vector_globe, draw_cross_markers, update_hud, update_search_ui,
-                update_score_detail, drag_info_box, update_info_box, update_rank_tags, update_cross_tags,
+                fit_rank_panel, drag_info_box, update_info_box, update_rank_tags, update_cross_tags,
             ).after(move_satellites),
         );
     app
@@ -713,11 +739,11 @@ fn reload_data(
     mut orbits: ResMut<Orbits>, mut prop: ResMut<Prop>, mut status: ResMut<PropStatus>, mut cat: ResMut<Catalog>,
     mut ranks: ResMut<Ranks>, mut cats: ResMut<Categories>, mut sim: ResMut<Sim>, mut sel: ResMut<Selected>, mut log: ResMut<BootLog>,
     scene: (Res<MarkerMats>, Query<Entity, With<Satellite>>, Query<Entity, With<RankPanel>>),
-    extra: (Res<ScoreOpen>, Res<PanelHidden>, Res<UiFont>, Res<Regions>, ResMut<RankWatch>, ResMut<Explore>, ResMut<Search>, ResMut<TypeFilter>, ResMut<RowCursor>),
+    extra: (Res<PanelHidden>, Res<UiFont>, Res<Regions>, ResMut<RankWatch>, ResMut<Explore>, ResMut<Search>, ResMut<TypeFilter>, ResMut<RowCursor>, Res<OrbitSet>),
 ) {
     let Some(req) = ev.read().last().copied() else { return };
     let (mats, sats, panel) = scene;
-    let (score_open, panel_hidden, ui_font, regions, mut watch, mut explore, mut search, mut tfilter, mut row) = extra;
+    let (panel_hidden, ui_font, regions, mut watch, mut explore, mut search, mut tfilter, mut row, oset) = extra;
     let mut lines = Vec::new();
     if req.elsets {
         match load_data(&cfg, &source.0, &mut lines) {
@@ -743,7 +769,7 @@ fn reload_data(
     }
     watch.last_modified = std::fs::metadata(&watch.path).and_then(|m| m.modified()).ok();
     for e in &panel { commands.entity(e).despawn_recursive(); }
-    spawn_rank_panel(&mut commands, &cfg, &ranks, &regions, &cats, score_open.0, panel_hidden.0, &ui_font.0);
+    spawn_rank_panel(&mut commands, &cfg, &ranks, &regions, &cats, &oset, &cat, panel_hidden.0, &ui_font.0);
     log.0.extend(lines);
 }
 
@@ -873,18 +899,40 @@ fn column(cfg: &Config, m: &Matrix6xX<f64>, c: usize) -> Vec3 {
     to_scene(cfg, m[(0, c)], m[(1, c)], m[(2, c)])
 }
 
-//Interpolated inertial position in km at t seconds after this satellite's epoch
-pub fn sat_eci_km(cfg: &Config, m: &Matrix6xX<f64>, t: f64) -> [f64; 3] {
-    let f = (t / cfg.data.step_seconds).clamp(0.0, (m.ncols() - 1) as f64);
+//Inertial state (km, km/s) at t seconds after this satellite's epoch: a cubic Hermite curve between the two
+//stored columns around t. Each column holds the position AND the velocity, and the velocity is the slope of
+//the position, so the curve leaves one column and arrives at the next in the right direction and bends with
+//the orbit. A straight line between 60 s columns cuts across the arc instead: up to about 4 km inside a low
+//orbit, 0.1 to 0.2 deg at the dish. The Hermite curve's error is h^4/384 times the fourth derivative of the
+//position, under a metre at h = 60 s.
+//With s = 0..1 across the step and h the step in seconds:
+//  r(s) = (2s^3-3s^2+1) r0 + (s^3-2s^2+s) h v0 + (3s^2-2s^3) r1 + (s^3-s^2) h v1
+//  v(s) = dr/dt = (1/h) dr/ds
+fn sat_state(cfg: &Config, m: &Matrix6xX<f64>, t: f64) -> ([f64; 3], [f64; 3]) {
+    let h = cfg.data.step_seconds;
+    let f = (t / h).clamp(0.0, (m.ncols() - 1) as f64);
     let c0 = f.floor() as usize;
     let c1 = (c0 + 1).min(m.ncols() - 1);
-    let a = f - c0 as f64;
-    let mut r = [0.0; 3];
-    for k in 0..3 { r[k] = m[(k, c0)] + (m[(k, c1)] - m[(k, c0)]) * a; }
-    r
+    let s = f - c0 as f64;
+    let (s2, s3) = (s * s, s * s * s);
+    //the four weights (for r0, h v0, r1, h v1) and their slopes d/ds
+    let (w0, w1, w2, w3) = (2.0 * s3 - 3.0 * s2 + 1.0, s3 - 2.0 * s2 + s, 3.0 * s2 - 2.0 * s3, s3 - s2);
+    let (d0, d1, d2, d3) = (6.0 * s2 - 6.0 * s, 3.0 * s2 - 4.0 * s + 1.0, 6.0 * s - 6.0 * s2, 3.0 * s2 - 2.0 * s);
+    let (mut r, mut v) = ([0.0; 3], [0.0; 3]);
+    for k in 0..3 {
+        let (r0, v0, r1, v1) = (m[(k, c0)], m[(3 + k, c0)], m[(k, c1)], m[(3 + k, c1)]);
+        r[k] = w0 * r0 + w1 * h * v0 + w2 * r1 + w3 * h * v1;
+        v[k] = (d0 * r0 + d2 * r1) / h + d1 * v0 + d3 * v1;
+    }
+    (r, v)
 }
 
+//Interpolated inertial position in km at t seconds after this satellite's epoch
+pub fn sat_eci_km(cfg: &Config, m: &Matrix6xX<f64>, t: f64) -> [f64; 3] { sat_state(cfg, m, t).0 }
+
 //Interpolated inertial velocity in km/s at t seconds after epoch
+pub fn sat_eci_vel(cfg: &Config, m: &Matrix6xX<f64>, t: f64) -> [f64; 3] { sat_state(cfg, m, t).1 }
+
 //Orbital period in seconds from the state at t (vis-viva: a = 1 / (2/r - v^2/mu), T = 2 pi sqrt(a^3/mu))
 fn sat_period_s(cfg: &Config, m: &Matrix6xX<f64>, t: f64) -> Option<f64> {
     const MU: f64 = 398600.4418;
@@ -896,16 +944,6 @@ fn sat_period_s(cfg: &Config, m: &Matrix6xX<f64>, t: f64) -> Option<f64> {
     if !(inv_a > 0.0) { return None; }              // not a closed orbit (or bad data)
     let a = 1.0 / inv_a;
     Some(2.0 * std::f64::consts::PI * (a * a * a / MU).sqrt())
-}
-
-pub fn sat_eci_vel(cfg: &Config, m: &Matrix6xX<f64>, t: f64) -> [f64; 3] {
-    let f = (t / cfg.data.step_seconds).clamp(0.0, (m.ncols() - 1) as f64);
-    let c0 = f.floor() as usize;
-    let c1 = (c0 + 1).min(m.ncols() - 1);
-    let a = f - c0 as f64;
-    let mut v = [0.0; 3];
-    for k in 0..3 { v[k] = m[(3 + k, c0)] + (m[(3 + k, c1)] - m[(3 + k, c0)]) * a; }
-    v
 }
 
 //Osculating classical elements from a state vector (Curtis Algorithm 4.2).
@@ -1209,7 +1247,8 @@ fn setup_scene(
 }
 
 //------------------------------------------------------------------------------------------ hud
-fn setup_hud(mut commands: Commands, cfg: Res<Config>, ranks: Res<Ranks>, regions: Res<Regions>, cats: Res<Categories>, ui_font: Res<UiFont>) {
+fn setup_hud(mut commands: Commands, cfg: Res<Config>, ranks: Res<Ranks>, regions: Res<Regions>, cats: Res<Categories>,
+             oset: Res<OrbitSet>, cat: Res<Catalog>, ui_font: Res<UiFont>) {
     let font = ui_font.0.clone();
     let text_c = hex(&cfg.colors.text);
 
@@ -1315,11 +1354,11 @@ fn setup_hud(mut commands: Commands, cfg: Res<Config>, ranks: Res<Ranks>, region
             });
     }
 
-    spawn_rank_panel(&mut commands, &cfg, &ranks, &regions, &cats, false, false, &font);
+    spawn_rank_panel(&mut commands, &cfg, &ranks, &regions, &cats, &oset, &cat, false, &font);
 
     //Bottom-right button bar
     commands
-        .spawn((Visibility::Inherited, Node {
+        .spawn((Visibility::Inherited, ButtonBar, Node {
             position_type: PositionType::Absolute,
             right: Val::Px(16.0),
             bottom: Val::Px(12.0),
@@ -1348,13 +1387,14 @@ fn setup_hud(mut commands: Commands, cfg: Res<Config>, ranks: Res<Ranks>, region
                         border: UiRect::all(Val::Px(2.0)),
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
+                        flex_shrink: 0.0,
                         ..default()
                     },
                     BackgroundColor(hex(&cfg.colors.button)),
                     BorderColor(hex(&cfg.colors.button_border)),
                 ))
                 .with_children(|b| {
-                    b.spawn((Text::new(label.to_uppercase()), TextFont { font: font.clone(), font_size: 12.0, ..default() }, TextColor(text_c)));
+                    b.spawn((Text::new(label.to_uppercase()), TextFont { font: font.clone(), font_size: 12.0, ..default() }, TextColor(text_c), TextLayout::new_with_no_wrap()));
                 });
             }
         });
@@ -1362,18 +1402,20 @@ fn setup_hud(mut commands: Commands, cfg: Res<Config>, ranks: Res<Ranks>, region
 
 //Top-right: search box (click or "/" to type), results under it, then the ranking panel.
 //Called at startup and again whenever SATELLITE_RANKS.json changes on disk.
-//Two deliberate lines per ranking row so it fits a narrow panel
+//Two short fixed lines per ranking row, under 40 characters (the panel is narrow and the font is wide);
+//the NORAD id and the current elevation are in the info box
 fn rank_row_label(e: &RankEntry) -> String {
-    let when = if e.in_progress { " NOW ".to_string() } else { format!("{:4.0}m", e.minutes_until_aos) };
+    let when = if e.in_progress { "NOW".to_string() } else { format!("IN {:.0}M", e.minutes_until_aos.max(1.0)) };
     let aos_hm = e.aos_local.get(11..16).unwrap_or("--:--");
     let los_hm = e.los_local.get(11..16).unwrap_or("--:--");
-    let el_now = if e.in_progress { format!("el now {:4.1}  ", e.el_now_deg) } else { String::new() };
     let left = if e.minutes_left > 0.0 { e.minutes_left } else { e.duration_min };
-    format!("{:2}  {:.2}  {:<18.18} {:5}  {}\n      {}-{}   {:4.1} MIN LEFT   {}PEAK {:4.1}",
-        e.rank, e.score, e.name, e.norad_id, when, aos_hm, los_hm, left, el_now.to_uppercase(), e.max_el_deg)
+    let left = if left >= 120.0 { format!("{:.0}H", left / 60.0) } else { format!("{left:.0}M") };
+    format!("{:>2} {:<18.18} {:>6} {:.2}\n   {aos_hm}-{los_hm}  {left} LEFT  PEAK {:.0}",
+        e.rank, e.name.to_uppercase(), when, e.score, e.max_el_deg)
 }
 
-fn spawn_rank_panel(commands: &mut Commands, cfg: &Config, ranks: &Ranks, regions: &Regions, cats: &Categories, score_open: bool, hidden: bool, font: &Handle<Font>) {
+fn spawn_rank_panel(commands: &mut Commands, cfg: &Config, ranks: &Ranks, regions: &Regions, cats: &Categories,
+                    oset: &OrbitSet, cat: &Catalog, hidden: bool, font: &Handle<Font>) {
     let text_c = hex(&cfg.colors.text);
     commands
         .spawn((
@@ -1381,9 +1423,11 @@ fn spawn_rank_panel(commands: &mut Commands, cfg: &Config, ranks: &Ranks, region
                 position_type: PositionType::Absolute,
                 right: Val::Px(16.0),
                 top: Val::Px(14.0),
+                max_height: Val::Percent(80.0),   // fit_rank_panel keeps it clear of the button bar
                 width: Val::Percent(34.0),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(3.0),
+                overflow: Overflow::clip(),
                 ..default()
             },
             if hidden { Visibility::Hidden } else { Visibility::Inherited },
@@ -1423,8 +1467,7 @@ fn spawn_rank_panel(commands: &mut Commands, cfg: &Config, ranks: &Ranks, region
                 b.spawn((Text::new(""), TextFont { font: font.clone(), font_size: 12.0, ..default() }, TextColor(text_c), RegionHeader));
             });
             col.spawn((
-                Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(2.0), padding: UiRect::left(Val::Px(12.0)), ..default() },
-                Visibility::Hidden,
+                Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(2.0), padding: UiRect::left(Val::Px(12.0)), display: Display::None, ..default() },
                 RegionList,
             ))
             .with_children(|list| {
@@ -1456,8 +1499,7 @@ fn spawn_rank_panel(commands: &mut Commands, cfg: &Config, ranks: &Ranks, region
                 b.spawn((Text::new(""), TextFont { font: font.clone(), font_size: 12.0, ..default() }, TextColor(text_c), TypeHeader));
             });
             col.spawn((
-                Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(2.0), padding: UiRect::left(Val::Px(12.0)), ..default() },
-                Visibility::Hidden,
+                Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(2.0), padding: UiRect::left(Val::Px(12.0)), display: Display::None, ..default() },
                 TypeList,
             ))
             .with_children(|list| {
@@ -1480,32 +1522,18 @@ fn spawn_rank_panel(commands: &mut Commands, cfg: &Config, ranks: &Ranks, region
 
             col.spawn((
                 Text::new(if ranks.entries.is_empty() { "RANKING  (no SATELLITE_RANKS.json)".to_string() }
-                          else { format!("RANKING  {}  ({} PASSES)   K FILTER   P HIDE", ranks.region_name.clone().unwrap_or_else(|| "NEXT 15 MIN".into()).to_uppercase(), ranks.entries.len()) }),
+                          else {
+                              let shown = ranks.entries.iter().filter(|e| oset.allows(cat, e.pass.column)).count();
+                              let set = if oset.mode == "all" { String::new() } else { format!("  {}", oset.label()) };
+                              format!("RANKING  {}{set}  {} PASSES", ranks.region_name.clone().unwrap_or_else(|| "NEXT 15 MIN".into()).to_uppercase(), shown)
+                          }),
                 TextFont { font: font.clone(), font_size: 12.0, ..default() },
                 TextColor(text_c),
                 Node { margin: UiRect::top(Val::Px(10.0)), ..default() },
             ));
-            //Collapsible score section: the weights, and the breakdown for the selected satellite
-            col.spawn((
-                Button,
-                ButtonAction::ToggleScore,
-                Node { padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)), border: UiRect::all(Val::Px(2.0)), ..default() },
-                BackgroundColor(hex(&cfg.colors.button)),
-                BorderColor(hex(&cfg.colors.button_border)),
-            ))
-            .with_children(|b| {
-                b.spawn((Text::new(if score_open { "SCORE WEIGHTS  [-]" } else { "SCORE WEIGHTS  [+]" }),
-                         TextFont { font: font.clone(), font_size: 12.0, ..default() }, TextColor(text_c)));
-            });
-            col.spawn((
-                Text::new(""),
-                TextFont { font: font.clone(), font_size: 11.0, ..default() },
-                TextColor(text_c),
-                Node { padding: UiRect::axes(Val::Px(8.0), Val::Px(2.0)), ..default() },
-                if score_open { Visibility::Inherited } else { Visibility::Hidden },
-                ScoreDetail,
-            ));
             for (row_i, e) in ranks.entries.iter().enumerate() {
+                //LEO / GEO filter: the row simply is not built for the class that is switched off
+                if !oset.allows(cat, e.pass.column) { continue; }
                 let label = rank_row_label(e);
                 col.spawn((
                     Button,
@@ -1514,13 +1542,15 @@ fn spawn_rank_panel(commands: &mut Commands, cfg: &Config, ranks: &Ranks, region
                     Node {
                         padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
                         border: UiRect::all(Val::Px(2.0)),
+                        flex_shrink: 0.0,
+                        overflow: Overflow::clip(),
                         ..default()
                     },
                     BackgroundColor(hex(&cfg.colors.button)),
                     BorderColor(hex(&cfg.colors.button_border)),
                 ))
                 .with_children(|b| {
-                    b.spawn((Text::new(label.to_uppercase()), TextFont { font: font.clone(), font_size: 12.0, ..default() }, TextColor(text_c)));
+                    b.spawn((Text::new(label), TextFont { font: font.clone(), font_size: 12.0, ..default() }, TextColor(text_c), TextLayout::new_with_no_wrap()));
                 });
             }
         });
@@ -1686,7 +1716,7 @@ fn update_hud(
     regions: Res<Regions>,
     explore: Res<Explore>,
     prop: Res<PropStatus>,
-    cats: Res<Categories>, tfilter: Res<TypeFilter>,
+    cats: Res<Categories>, tfilter: Res<TypeFilter>, orbits: Res<OrbitSet>, time: Res<Time>,
     mut q: Query<&mut Text, With<HudText>>,
 ) {
     let Ok(mut text) = q.get_single_mut() else { return };
@@ -1699,14 +1729,14 @@ fn update_hud(
     if !prop.finished && prop.total > 0 { state = format!("{state}    PROPAGATING {}/{}", prop.done, prop.total); }
     let utc = fmt_utc_est(chrono::Utc::now());
     let sim_utc = jd_to_string(sim.jd0 + sim.t / 86400.0);
+    let clock = if *mode == Mode::History { format!("now  {utc}\nsim  {sim_utc}    {state}") } else { format!("{utc}    {state}") };
     let new_text = format!(
-        "PERIGEE // ORBIT VIEW\n\
-         now  {utc}\n\
-         sim  {sim_utc}    {state}\n\
-         {}    view {region_name}    in view {}{}{}{}",
-        cfg.station.name, in_view.count, if ranked_only.0 { "    RANKED ONLY" } else { "" },
+        "{clock}\n\
+         {}    view {region_name}    in view {}    orbits {} (o){}{}{}{}",
+        cfg.station.name, in_view.count, orbits.label(), if ranked_only.0 { "    RANKED ONLY" } else { "" },
         if tfilter.0.is_some() { format!("    TYPE {}", cats.label(&tfilter)) } else { String::new() },
         if explore.on { "    EXPLORE  (X ENDS)" } else { "" },
+        if time.elapsed_secs_f64() < orbits.note_until && !orbits.note.is_empty() { format!("\n{}", orbits.note) } else { String::new() },
     ).to_uppercase();
     if text.0 != new_text { text.0 = new_text; }
 }
@@ -1724,6 +1754,8 @@ fn keyboard(
     mut regions: ResMut<Regions>,
     mut panel: Query<&mut Visibility, With<RankPanel>>,
     mut tmenu: ResMut<TypeMenu>, tfilter: Res<TypeFilter>, focus: Res<ViewerFocus>,
+    //Bevy caps a system at sixteen parameters, so the [O] filter and the element sets travel together
+    mut orbit_ui: (ResMut<OrbitSet>, Res<Catalog>),
 ) {
     if search.active || !focus.0 { return; }   // typing goes to the search box, or to perigee-control's tile
     if keys.just_pressed(KeyCode::KeyK) { ranked_only.0 = !ranked_only.0; }
@@ -1738,6 +1770,7 @@ fn keyboard(
     if keys.just_pressed(KeyCode::Equal) || keys.just_pressed(KeyCode::NumpadAdd) { sim.speed = (sim.speed * 2.0).min(cfg.sim.max_speed); }
     if keys.just_pressed(KeyCode::Minus) || keys.just_pressed(KeyCode::NumpadSubtract) { sim.speed = (sim.speed / 2.0).max(cfg.sim.min_speed); }
     if keys.just_pressed(KeyCode::KeyR) { sim.t = 0.0; }
+    if keys.just_pressed(KeyCode::KeyO) { cycle_orbits(&orbit_ui.1, &mut orbit_ui.0, &time); }
     if keys.just_pressed(KeyCode::KeyX) { let on = !explore.on; set_explore(on, time.elapsed_secs_f64(), &mut explore, &mut sel, &mut panel_hidden, &mut panel); }
     if keys.just_pressed(KeyCode::Escape) { set_explore(false, time.elapsed_secs_f64(), &mut explore, &mut sel, &mut panel_hidden, &mut panel); sel.0 = None; }
 }
@@ -1750,7 +1783,6 @@ fn buttons(
     mut mode: ResMut<Mode>,
     mut ranked_only: ResMut<RankedOnly>,
     mut search: ResMut<Search>,
-    mut score_open: ResMut<ScoreOpen>,
     mut info_drag: ResMut<InfoDrag>,
     mut menu: ResMut<RegionMenu>,
     regions: Res<Regions>,
@@ -1770,7 +1802,6 @@ fn buttons(
                     ButtonAction::Clear => sel.0 = None,
                     ButtonAction::ToggleRanked => ranked_only.0 = !ranked_only.0,
                     ButtonAction::OpenSearch => { search.active = true; }
-                    ButtonAction::ToggleScore => score_open.0 = !score_open.0,
                     ButtonAction::FollowSat => { info_drag.pinned = None; info_drag.dragging = false; }
                     ButtonAction::RegionMenu => { menu.open = !menu.open; menu.highlight = regions.current; }
                     ButtonAction::TypeMenu => { tmenu.open = !tmenu.open; tmenu.highlight = tfilter.0.map_or(0, |k| k + 1); }
@@ -1844,12 +1875,12 @@ fn apply_type(
     cats: Res<Categories>,
     menu: Res<TypeMenu>,
     mut header: Query<&mut Text, With<TypeHeader>>,
-    mut list: Query<&mut Visibility, With<TypeList>>,
+    mut list: Query<&mut Node, With<TypeList>>,
 ) {
     let caption = format!("TYPE: {}  [{}]{}", cats.label(&filter), if menu.open { "-" } else { "+" },
         "  T");
     for mut t in &mut header { if t.0 != caption { t.0 = caption.clone(); } }
-    for mut v in &mut list { let want = if menu.open { Visibility::Inherited } else { Visibility::Hidden }; if *v != want { *v = want; } }
+    for mut n in &mut list { let want = if menu.open { Display::Flex } else { Display::None }; if n.display != want { n.display = want; } }
 }
 
 //CATEGORIES.json (written by `perigee` / `perigee categories`) -> per category, which columns belong.
@@ -1881,7 +1912,7 @@ fn apply_region(
     menu: Res<RegionMenu>,
     source: Res<DataSource>,
     mut header: Query<&mut Text, With<RegionHeader>>,
-    mut list: Query<&mut Visibility, With<RegionList>>,
+    mut list: Query<&mut Node, With<RegionList>>,
     mut rr: ResMut<Rerank>,
     mut sent: Local<Option<usize>>,
     mut started: Local<bool>,
@@ -1891,7 +1922,7 @@ fn apply_region(
             "  V");
         for mut t in &mut header { if t.0 != caption { t.0 = caption.clone(); } }
     }
-    for mut v in &mut list { let want = if menu.open { Visibility::Inherited } else { Visibility::Hidden }; if *v != want { *v = want; } }
+    for mut n in &mut list { let want = if menu.open { Display::Flex } else { Display::None }; if n.display != want { n.display = want; } }
 
     //Selection changed since we last told Perigee: write it and ask for a re-rank right away
     if !*started { *started = true; *sent = regions.sent; }
@@ -1920,7 +1951,6 @@ fn arrow_keys(
     ranks: Res<Ranks>,
     mut cursor: ResMut<RowCursor>,
     mut sel: ResMut<Selected>,
-    mut score_open: ResMut<ScoreOpen>,
     mut menu: ResMut<RegionMenu>,
     mut regions: ResMut<Regions>,
     (mut tmenu, mut tfilter, cats): (ResMut<TypeMenu>, ResMut<TypeFilter>, Res<Categories>),
@@ -1957,11 +1987,8 @@ fn arrow_keys(
                 if shown > 0 { cursor.0 = Some(cursor.0.map_or(shown - 1, |c| (c + shown - 1) % shown)); }
             }
             Key::Enter => {
-                //A row picks that satellite; SELECT with no row highlighted opens / closes the score weights
-                match cursor.0 {
-                    Some(c) => { if let Some(e) = ranks.entries.get(c) { sel.0 = Some(e.pass.column); } }
-                    None => { score_open.0 = !score_open.0; }
-                }
+                //A row picks that satellite
+                if let Some(e) = cursor.0.and_then(|c| ranks.entries.get(c)) { sel.0 = Some(e.pass.column); }
             }
             Key::ArrowRight | Key::ArrowLeft => {
                 if ranks.entries.is_empty() { continue; }
@@ -2066,11 +2093,12 @@ fn watch_ranks(
     orbits: Res<Orbits>,
     mut watch: ResMut<RankWatch>,
     mut ranks: ResMut<Ranks>,
-    score_open: Res<ScoreOpen>,
     panel_hidden: Res<PanelHidden>,
     ui_font: Res<UiFont>,
     regions: Res<Regions>,
     cats: Res<Categories>,
+    oset: Res<OrbitSet>,
+    catalog: Res<Catalog>,
     mut commands: Commands,
     panel: Query<Entity, With<RankPanel>>,
 ) {
@@ -2092,74 +2120,17 @@ fn watch_ranks(
     *ranks = fresh;
 
     for e in &panel { commands.entity(e).despawn_recursive(); }
-    spawn_rank_panel(&mut commands, &cfg, &ranks, &regions, &cats, score_open.0, panel_hidden.0, &ui_font.0);
+    spawn_rank_panel(&mut commands, &cfg, &ranks, &regions, &cats, &oset, &catalog, panel_hidden.0, &ui_font.0);
 }
 
-//Fill the score section: weights + settings, and weight x term = contribution for the selected satellite
-fn update_score_detail(
-    sel: Res<Selected>,
-    ranks: Res<Ranks>,
-    score_open: Res<ScoreOpen>,
-    cat: Res<Catalog>,
-    mut detail: Query<(&mut Text, &mut Visibility), With<ScoreDetail>>,
-    mut labels: Query<(&Parent, &mut Text), (Without<ScoreDetail>, With<Parent>)>,
-    buttons: Query<(Entity, &ButtonAction), With<Button>>,
-) {
-    if !(sel.is_changed() || ranks.is_changed() || score_open.is_changed()) { return; }
-
-    //Button caption follows the open / closed state
-    for (entity, action) in &buttons {
-        if let ButtonAction::ToggleScore = action {
-            for (parent, mut t) in &mut labels {
-                if parent.get() == entity {
-                    t.0 = format!("SCORE WEIGHTS  [{}]", if score_open.0 { "-" } else { "+" });
-                }
-            }
-        }
-    }
-
-    let Ok((mut text, mut vis)) = detail.get_single_mut() else { return };
-    *vis = if score_open.0 { Visibility::Inherited } else { Visibility::Hidden };
-    if !score_open.0 { return; }
-
-    let w = ranks.weights.clone().unwrap_or(Weights { duration: 0.35, elevation: 0.30, transmitter: 0.25, freshness: 0.10 });
-    let mut out = String::new();
-    if ranks.weights.is_none() {
-        out.push_str("(weights not in this SATELLITE_RANKS.json, showing defaults; re-run perigee rank)\n");
-    }
-    if !ranks.generated_local.is_empty() {
-        out.push_str(&format!("ranking of passes above {:.0} deg starting within {:.0} min, made {}\n\n",
-            ranks.mask_deg, ranks.horizon_min, ranks.generated_local.get(11..19).unwrap_or("")));
-    }
-    //What the code favours: one row per parameter, weight = its share of a perfect 1.00 score
-    out.push_str("WHAT IS FAVOURED             weight   max boost\n");
-    out.push_str(&format!("time left above mask          {:.2}     +{:.2}\n", w.duration, w.duration));
-    out.push_str("    full at 10 min or more, scales down, 0 under 2 min\n");
-    out.push_str(&format!("best elevation still ahead    {:.2}     +{:.2}\n", w.elevation, w.elevation));
-    out.push_str("    sin(el): 30 deg = half, 90 = full; above 85 x0.3 (keyhole)\n");
-    out.push_str(&format!("transmitter known             {:.2}     +{:.2}\n", w.transmitter, w.transmitter));
-    out.push_str("    downlink freq listed = full, listed w/o freq = half, none = 0\n");
-    out.push_str(&format!("element set freshness         {:.2}     +{:.2}\n", w.freshness, w.freshness));
-    out.push_str("    full when brand new, 0 at 24 h old, linear between\n");
-    let total = w.duration + w.elevation + w.transmitter + w.freshness;
-    out.push_str(&format!("perfect score                 {:.2}     +{:.2}\n", total, total));
-    out.push_str("not scored: range, azimuth, band, in progress vs upcoming\n");
-
-    match sel.0 {
-        None => out.push_str("\nselect a satellite to see its breakdown"),
-        Some(col) => match ranks.entries.iter().find(|e| e.pass.column == col) {
-            None => out.push_str(&format!("\n{}  is not on the ranking list", describe(&cat, col))),
-            Some(e) => {
-                out.push_str(&format!("\n#{}  {}   weight x term = boost\n", e.rank, e.name));
-                out.push_str(&format!("  duration     {:.2} x {:.2} = {:.3}\n", w.duration, e.duration_term, w.duration * e.duration_term));
-                out.push_str(&format!("  elevation    {:.2} x {:.2} = {:.3}\n", w.elevation, e.elevation_term, w.elevation * e.elevation_term));
-                out.push_str(&format!("  transmitter  {:.2} x {:.2} = {:.3}\n", w.transmitter, e.transmitter_term, w.transmitter * e.transmitter_term));
-                out.push_str(&format!("  freshness    {:.2} x {:.2} = {:.3}\n", w.freshness, e.freshness_term, w.freshness * e.freshness_term));
-                out.push_str(&format!("  score {:.3}", e.score));
-            }
-        },
-    }
-    text.0 = out;
+//The ranking panel may grow down to just above the button bar, whatever height the bar has wrapped to;
+//rows that do not fit are clipped instead of landing on the buttons
+fn fit_rank_panel(bar: Query<(&ComputedNode, &GlobalTransform), With<ButtonBar>>, mut panel: Query<&mut Node, With<RankPanel>>) {
+    let Ok((b, gt)) = bar.get_single() else { return };
+    //The bar's top edge in logical pixels from the top of the view; the panel starts 14 px down
+    let bar_top = (gt.translation().y - b.size().y / 2.0) * b.inverse_scale_factor();
+    let want = Val::Px((bar_top - 14.0 - 10.0).max(60.0));
+    for mut n in &mut panel { if n.max_height != want { n.max_height = want; } }
 }
 
 //Press anywhere on the info box and move the mouse to drag it; it stays where it is dropped
@@ -2412,8 +2383,35 @@ fn update_info_box(
     }
 }
 
-//Spawn "perigee rank" in the data folder every rerank_seconds (non-blocking); the file watcher picks up the result
-fn auto_rerank(time: Res<Time>, cfg: Res<Config>, mut rr: ResMut<Rerank>, mut watch: ResMut<RankWatch>) {
+//The panel is spawned with the filter baked in, so a change of class rebuilds it
+fn orbit_filter_panel(
+    oset: Res<OrbitSet>, cfg: Res<Config>, ranks: Res<Ranks>, regions: Res<Regions>, cats: Res<Categories>,
+    cat: Res<Catalog>, panel_hidden: Res<PanelHidden>, ui_font: Res<UiFont>,
+    mut commands: Commands, panel: Query<Entity, With<RankPanel>>,
+) {
+    if !oset.is_changed() { return; }
+    for e in &panel { commands.entity(e).despawn_recursive(); }
+    spawn_rank_panel(&mut commands, &cfg, &ranks, &regions, &cats, &oset, &cat, panel_hidden.0, &ui_font.0);
+}
+
+//[O]: cycle the orbit class shown. Instant, because it only filters the satellites already propagated;
+//when the chosen class is empty the note says so (the last full run did not pull that part of the sky).
+fn cycle_orbits(cat: &Catalog, orbits: &mut OrbitSet, time: &Time) {
+    orbits.mode = match orbits.mode.as_str() { "all" => "leo", "leo" => "geo", _ => "all" }.to_string();
+    let n = (0..cat.ids.len()).filter(|c| orbits.allows(cat, *c)).count();
+    orbits.note_until = time.elapsed_secs_f64() + 6.0;
+    orbits.note = if n == 0 {
+        format!("ORBITS {}: nothing in the data - run a full refresh with that set", orbits.label())
+    } else {
+        format!("ORBITS {}: {n} satellites", orbits.label())
+    };
+    println!("{}", orbits.note);
+}
+
+//Spawn "perigee rank" in the data folder every rerank_seconds (non-blocking); the file watcher picks up
+//the result. Scrubbed off live, the clock's own time is handed to the engine ("perigee rank <jd>") and a
+//run is triggered as soon as the clock has moved far enough, so fast-forwarding re-ranks as it goes.
+fn auto_rerank(time: Res<Time>, cfg: Res<Config>, sim: Res<Sim>, mode: Res<Mode>, mut rr: ResMut<Rerank>, mut watch: ResMut<RankWatch>) {
     if cfg.data.rerank_command.is_empty() || cfg.data.rerank_seconds <= 0.0 { return; }
     //Reap a finished run; the new file is read on the next frame instead of waiting for the poll
     if let Some(child) = rr.child.as_mut() {
@@ -2424,11 +2422,20 @@ fn auto_rerank(time: Res<Time>, cfg: Res<Config>, mut rr: ResMut<Rerank>, mut wa
         }
     }
     let now = time.elapsed_secs_f64();
-    if now < rr.next { return; }
-    rr.next = now + cfg.data.rerank_seconds.max(10.0);
+    //History: the clock can jump hours in seconds, so re-rank on clock movement (5 min of sim time)
+    //as well as on the wall-clock interval.
+    let scrubbed = *mode == Mode::History;
+    let sim_jd = sim.jd();
+    let moved = scrubbed && (sim_jd - rr.last_jd).abs() > 5.0 / 1440.0;
+    if now < rr.next && !moved { return; }
+    rr.next = now + cfg.data.rerank_seconds.max(if scrubbed { 3.0 } else { 10.0 });
+    rr.last_jd = sim_jd;
     let exe = std::path::Path::new(&cfg.data.rerank_command);
     let exe = if exe.is_absolute() { exe.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(exe) };
-    match std::process::Command::new(&exe).arg("rank").current_dir(&rr.dir)
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.arg("rank");
+    if scrubbed { cmd.arg(format!("{sim_jd:.6}")); }
+    match cmd.current_dir(&rr.dir)
         .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn()
     {
         Ok(child) => { println!("perigee rank started ({})", exe.display()); rr.child = Some(child); }
@@ -2441,11 +2448,12 @@ fn refresh_ranks_live(
     time: Res<Time>,
     sim: Res<Sim>,
     cfg: Res<Config>,
-    score_open: Res<ScoreOpen>,
     panel_hidden: Res<PanelHidden>,
     ui_font: Res<UiFont>,
     regions: Res<Regions>,
     cats: Res<Categories>,
+    oset: Res<OrbitSet>,
+    catalog: Res<Catalog>,
     mut ranks: ResMut<Ranks>,
     mut last: Local<f64>,
     mut commands: Commands,
@@ -2495,7 +2503,7 @@ fn refresh_ranks_live(
     //which avoids a one-frame gap that reads as a blink on a slow display
     if order_now != order_before {
         for ent in &panel { commands.entity(ent).despawn_recursive(); }
-        spawn_rank_panel(&mut commands, &cfg, &ranks, &regions, &cats, score_open.0, panel_hidden.0, &ui_font.0);
+        spawn_rank_panel(&mut commands, &cfg, &ranks, &regions, &cats, &oset, &catalog, panel_hidden.0, &ui_font.0);
     } else {
         for (idx, children) in &rows {
             if let Some(e) = ranks.entries.get(idx.0) {
@@ -2629,7 +2637,7 @@ fn move_satellites(
     ranks: Res<Ranks>, ranked_only: Res<RankedOnly>, sel: Res<Selected>, regions: Res<Regions>,
     mats: Res<MarkerMats>, mut in_view: ResMut<InView>,
     mut q: Query<(&Satellite, &mut Transform, &mut Visibility, &mut MeshMaterial3d<StandardMaterial>, &mut SatInView)>,
-    cats: Res<Categories>, tfilter: Res<TypeFilter>,
+    cats: Res<Categories>, tfilter: Res<TypeFilter>, oset: Res<OrbitSet>,
 ) {
     let st = &cfg.station;
     let gmst = gmst_rad(sim.jd0 + sim.t / 86400.0);
@@ -2638,7 +2646,8 @@ fn move_satellites(
     for (sat, mut tf, mut vis, mut mat, mut flag) in &mut q {
         let t = sat_t(&sim, &cat, sat.0);
         //Ranked-only and the TYPE filter both hide markers; the pick always shows
-        let filtered_out = (ranked_only.0 && !ranks.columns.contains(&sat.0) || !cats.allows(&tfilter, sat.0)) && sel.0 != Some(sat.0);
+        let filtered_out = (ranked_only.0 && !ranks.columns.contains(&sat.0) || !cats.allows(&tfilter, sat.0)
+            || !oset.allows(&cat, sat.0)) && sel.0 != Some(sat.0);
         *vis = if t < 0.0 || filtered_out { Visibility::Hidden } else { Visibility::Inherited };
         let eci = sat_eci_km(&cfg, &orbits.0[sat.0], t);
         tf.translation = to_scene(&cfg, eci[0], eci[1], eci[2]);
@@ -2857,7 +2866,7 @@ fn orbit_camera(
 //it; everything else dims while something is selected.
 fn draw_orbits(orbits: Res<Orbits>, sel: Res<Selected>, sim: Res<Sim>, cat: Res<Catalog>, cfg: Res<Config>,
                ranks: Res<Ranks>, ranked_only: Res<RankedOnly>, regions: Res<Regions>, mut crossings: ResMut<Crossings>,
-               cats: Res<Categories>, tfilter: Res<TypeFilter>,
+               cats: Res<Categories>, tfilter: Res<TypeFilter>, oset: Res<OrbitSet>,
                cam: Query<&GlobalTransform, With<Camera3d>>, earth: Query<&GlobalTransform, With<Earth>>,
                mut gizmos: Gizmos, mut bold: Gizmos<BoldLines>) {
     crossings.0.clear();
@@ -2882,7 +2891,7 @@ fn draw_orbits(orbits: Res<Orbits>, sel: Res<Selected>, sim: Res<Sim>, cat: Res<
         let t = sat_t(&sim, &cat, i);
         if t < 0.0 { continue; }
         let selected = sel.0 == Some(i);
-        if (ranked_only.0 && !ranks.columns.contains(&i) || !cats.allows(&tfilter, i)) && !selected { continue; }
+        if (ranked_only.0 && !ranks.columns.contains(&i) || !cats.allows(&tfilter, i) || !oset.allows(&cat, i)) && !selected { continue; }
         let ranked = ranks.columns.contains(&i);
         //Focus: while something is picked every other track fades to the dim colour, ranked or not
         let color = match (sel.0, top_tier(&ranks, i)) {
@@ -3252,5 +3261,41 @@ fn draw_reticles(
         let ang = k as f32 * std::f32::consts::FRAC_PI_2 + std::f32::consts::FRAC_PI_4;
         let dir = facing * Vec3::new(ang.cos(), ang.sin(), 0.0);
         gizmos.line(p + dir * r * 1.18, p + dir * r * 1.62, c);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    //A circular orbit has an exact answer at every instant, so the interpolation can be checked between columns
+    #[test]
+    fn interpolation_follows_the_orbit_between_columns() {
+        const MU: f64 = 398600.4418;
+        let (r, inc) = (6778.0f64, 51.6f64.to_radians());
+        let n = (MU / (r * r * r)).sqrt();
+        let state = |t: f64| {
+            let u = n * t;
+            [r * u.cos(), r * u.sin() * inc.cos(), r * u.sin() * inc.sin(),
+             -r * n * u.sin(), r * n * u.cos() * inc.cos(), r * n * u.cos() * inc.sin()]
+        };
+        let cfg = Config::default();
+        let h = cfg.data.step_seconds;
+        let cols: Vec<_> = (0..100).map(|k| nalgebra::Vector6::from(state(k as f64 * h))).collect();
+        let m = Matrix6xX::from_columns(&cols);
+        let dist = |a: [f64; 3], b: &[f64]| ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt();
+        let (mut dr, mut dv) = (0.0f64, 0.0f64);
+        for i in 0..2000 {
+            let t = i as f64 * 2.9;           // lands all over the steps, not on one fixed fraction
+            let truth = state(t);
+            dr = dr.max(dist(sat_eci_km(&cfg, &m, t), &truth[..3]));
+            dv = dv.max(dist(sat_eci_vel(&cfg, &m, t), &truth[3..]));
+        }
+        //a straight line would be off by about 3.9 km and 4.4 m/s here
+        assert!(dr < 0.001 && dv < 0.0001, "position off {dr:.4} km, velocity off {dv:.6} km/s");
+        //on a column it is that column exactly, and past the end it holds the last column
+        let last = (m.ncols() - 1) as f64 * h;
+        assert_eq!(sat_eci_km(&cfg, &m, 3.0 * h), [m[(0, 3)], m[(1, 3)], m[(2, 3)]]);
+        assert_eq!(sat_eci_km(&cfg, &m, last + 500.0), sat_eci_km(&cfg, &m, last));
     }
 }

@@ -61,6 +61,7 @@ pub struct Data {
     pub orbit_file: String, pub step_seconds: f64, pub ranks_poll_seconds: f64,
     pub top_ranked: usize,        // how many of Perigee's ranked passes the viewer keeps (panel rows, rings, ranked-only filter)
     pub rerank_command: String,   // Perigee binary to run for a fresh ranking ("" disables)
+    pub orbits: String,           // which orbits a full refresh pulls: "leo", "geo" (the belt) or "all"; [O] cycles it
     pub rerank_seconds: f64,      // how often to run it
     //Local propagation: integrate the element sets (SORTED_SATS.json) here with the engine's own RK4,
     //instead of loading the vectors the engine wrote. No 200 MB file, and the data never runs out.
@@ -74,7 +75,7 @@ pub struct Data {
 impl Default for Data {
     fn default() -> Self { Self {
         orbit_file: "../Perigee/src/ORBIT_DATA.json".into(), step_seconds: 60.0, ranks_poll_seconds: 60.0, top_ranked: 7,
-        rerank_command: "../Perigee/target/release/perigee".into(), rerank_seconds: 120.0,
+        rerank_command: "../Perigee/target/release/perigee".into(), orbits: "all".into(), rerank_seconds: 120.0,
         local_propagation: true, propagation_budget_ms: 50.0, propagation_threads: 0,
         keep_before_min: 45.0, propagate_ahead_h: 12.0, propagate_min_ahead_h: 6.0,
     } }
